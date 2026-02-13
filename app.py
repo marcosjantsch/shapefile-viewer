@@ -12,7 +12,7 @@ import zipfile
 # =========================================
 # CONFIG
 # =========================================
-DEFAULT_PATH = "Shape\GEO.shp"  # ajuste se quiser
+DEFAULT_PATH = "GEO.shp"  # ajuste se quiser
 
 st.set_page_config(
     page_title="Visualizador de Shapefile",
