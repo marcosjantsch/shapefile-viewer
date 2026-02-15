@@ -154,7 +154,7 @@ def init_session_state():
 # 3. CARREGAMENTO DE DADOS
 # =========================================
 GEO_PATH = 'Shape/Geo.shp'
-CSV_PATH = 'Dados.csv'
+CSV_PATH = 'https://1drv.ms/x/c/8b88b81c064543d3/IQDfjx7BDQVpQobIxiaJEUtkAQegf9T-Kn1gzCtjp85y4Xg?e=yREJGd'
 
 if not os.path.exists(GEO_PATH):
     st.error(f"Arquivo não encontrado: {GEO_PATH}")
