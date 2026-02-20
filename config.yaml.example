@@ -1,0 +1,22 @@
+# config.yaml.example
+# Copie para config.yaml e edite.
+#
+# ⚠️ IMPORTANTE: NUNCA faça commit do config.yaml real no Git.
+cookie:
+  expiry_days: 30
+  key: "sua_chave_secreta_aqui_mude_isso"
+  name: "streamlit_auth_cookie"
+
+credentials:
+  usernames:
+    marcos:
+      email: "marcos@avant.com.br"
+      name: "Marcos"
+      # Gere o hash:
+      # python -c "import streamlit_authenticator as stauth; print(stauth.Hasher(['SUA_SENHA']).generate())"
+      password: "$2b$12$COLE_O_HASH_AQUI"
+      role: "admin"
+
+preauthorized:
+  emails:
+    - "marcos@avant.com.br"

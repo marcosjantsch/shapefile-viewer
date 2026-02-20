@@ -1,0 +1,29 @@
+cookie:
+  expiry_days: 120
+  key: "$2b$12$N7I9kz7CGdH5Gr6xYQ47xeu083YEkp1EUHvJt/3k3PgKEgLdXiuli"
+  name: streamlit_auth_cookie
+
+credentials:
+  usernames:
+    marcos:
+      email: marcos.jantsch@valorflorestal.com.br
+      name: Marcos
+      password: "$2b$12$N7I9kz7CGdH5Gr6xYQ47xeu083YEkp1EUHvJt/3k3PgKEgLdXiuli"
+      role: admin
+
+    MarcosJ:
+      email: marcos.jantsch@gmail.com
+      name: Marcosj
+      password: "$2b$12$N7I9kz7CGdH5Gr6xYQ47xeu083YEkp1EUHvJt/3k3PgKEgLdXiuli"
+      role: user
+
+    Renato:
+      email: renato.lima@valorflorestal.com.br
+      name: Renato
+      password: "$2b$12$OP5vd7pYJHoxSNveF4IoCe5oatYQpsi8TUZ965eTJBrJ6yGjz.Y.m"
+      role: user
+
+preauthorized:
+  emails:
+    - marcos.jantsch@gmail.com
+
