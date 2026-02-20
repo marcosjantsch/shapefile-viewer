@@ -14,16 +14,16 @@ credentials:
       name: Marcosj
       password: $2b$12$N7I9kz7CGdH5Gr6xYQ47xeu083YEkp1EUHvJt/3k3PgKEgLdXiuli
       role: user
-    Renato:
-      email: renato.lima@valorflorestal.com.br
-      name: Renato
-      password: $2b$12$x7M5DfrC3U48fFpcRFDVKO/AO3T3fZwmzq1FM0oXbSHpjHUxO7zLO
-      role: user
     Cesar:
       name: Cesar
       email: marcos.jantsch@valorflorestal.com.br
       role: user
       password: $2b$12$Rz4dA0quODGfjqckkKgD9uSRVSph8HF925dwfU6yD1.PKwNjQ/GyK
+    Renato:
+      name: RenatoVF
+      email: ''
+      role: user
+      password: $2b$12$tQZ2le7h0PuXwqwtkTkI6ObtVSf4mm5crrRXyCxchQszCKRYuBzWO
 preauthorized:
   emails:
   - marcos.jantsch@gmail.com
