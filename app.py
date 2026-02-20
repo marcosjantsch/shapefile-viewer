@@ -172,7 +172,7 @@ if AUTH_ENABLED:
 # =====================================================================
 # CONSTANTES
 # =====================================================================
-GEO_PATH = os.path.join("Shape", "Geo.shp")
+GEO_PATH = os.path.join( "Geo.shp")
 SIMPLIFICATION_TOLERANCE = 0.001
 MAX_FEATURES_FULL_MAP = 5000
 
@@ -1185,6 +1185,7 @@ with tab4:
             st.line_chart(serie3.set_index("DATA")["RISCO_ESTRESSE_HIDRICO_MEDIA"])
         else:
             st.info("Sem dados suficientes para esta série (verifique `RISCO_ESTRESSE_HIDRICO`).")
+
 
 
 logger.info("App carregado com sucesso.")
