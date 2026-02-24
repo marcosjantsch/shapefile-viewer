@@ -172,7 +172,7 @@ if AUTH_ENABLED:
 # =====================================================================
 # CONSTANTES
 # =====================================================================
-GEO_PATH = "Geo.shp"
+GEO_PATH =  "Geo.shp"
 SIMPLIFICATION_TOLERANCE = 0.001
 MAX_FEATURES_FULL_MAP = 5000
 
@@ -1094,6 +1094,7 @@ with tab3:
 
 
 
+# ===== ABA 4: ANÁLISE AVANÇADA (COMPLETA: ANO/MÊS + EXCEL + ÁREA 1 DECIMAL + GRÁFICOS EM BARRAS) =====
 with tab4:
     st.markdown('<div class="section-title">Análise Avançada</div>', unsafe_allow_html=True)
 
@@ -1140,6 +1141,7 @@ with tab4:
         "PRECIP": "PRECIP_CHIRPS_MM", "PRECIP_MM": "PRECIP_CHIRPS_MM",
         "TEMP_MEDIA": "TEMP_MEDIA_C",
         "UMID_MEDIA": "UMID_MEDIA_PCT",
+        "AREA_PORDUT": "AREA_PRODU",
         "AREA_PRODUT": "AREA_PRODU",
         "AREA_PRODUTIVA": "AREA_PRODU",
     }
@@ -1352,13 +1354,14 @@ with tab4:
     )
 
     # ----------------------------------------------------
-    # 7) GRÁFICOS — um por item da tabela (SEM AREA_PRODU)
+    # 7) GRÁFICOS — um por item da tabela (BARRAS) (SEM AREA_PRODU)
     # ----------------------------------------------------
     st.markdown("---")
     st.markdown('<div class="section-title">Gráficos por Ano/Mês</div>', unsafe_allow_html=True)
 
     chart_df = resumo_mes.copy()
     chart_df["DATA_REF"] = pd.to_datetime(chart_df["Ano/Mês"] + "-01", errors="coerce")
+    chart_df = chart_df.sort_values("DATA_REF").copy()
 
     cols_plot = [
         c for c in chart_df.columns
@@ -1366,12 +1369,11 @@ with tab4:
     ]
 
     for col in cols_plot:
-        fig = px.line(
+        fig = px.bar(
             chart_df.dropna(subset=["DATA_REF"]),
             x="DATA_REF",
             y=col,
-            markers=True,
-            title=col
+            title=col,
         )
         fig.update_layout(xaxis_title="Ano/Mês", yaxis_title=col)
         st.plotly_chart(fig, use_container_width=True)
@@ -1379,4 +1381,3 @@ with tab4:
 
         
 logger.info("App carregado com sucesso.")
-
