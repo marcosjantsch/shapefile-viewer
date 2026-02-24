@@ -860,24 +860,131 @@ if st.session_state.aplicar:
 tab1, tab2, tab3, tab4 = st.tabs(["🗺️ Mapa Principal", "📋 Dados Shape", "📈 Dados de Clima", "📉 Análise Avançada"])
 
 # ===== ABA 1: MAPA =====
+
+
+# ===== ABA 1: MAPA PRINCIPAL (CARREGA GEO COMPLETO + CONTROLE VIA MAPA) =====
 with tab1:
     st.markdown('<div class="section-title">Mapa Principal</div>', unsafe_allow_html=True)
 
-    if gdf_filtered is not None and not gdf_filtered.empty:
-        m = generate_map_full_optimized(gdf_filtered, tipo_dado)
-
-        st_folium(
-            m,
-            width=1400,
-            height=600,
-            key="mapa_principal",
-            returned_objects=[],
-        )
+    # ----------------------------------------------------
+    # 1) Define qual GEO mostrar
+    #    - Ao iniciar: mostra TODO o shapefile
+    #    - Após aplicar filtros: mostra filtrado
+    # ----------------------------------------------------
+    if st.session_state.get("aplicar", False):
+        gdf_map = gdf_filtered
+        tipo_exib = tipo_dado
     else:
-        st.info("Nenhuma geometria encontrada com os filtros aplicados.")
+        gdf_map = gdf_full
+        tipo_exib = "Todos os Dados"
 
-# ===== ABA 2: DADOS SHAPE =====
-# ===== ABA 2: DADOS SHAPE (AJUSTADA: ÁREAS 1 DECIMAL + EXPORT EXCEL) =====
+    if gdf_map is None or gdf_map.empty:
+        st.info("Nenhuma geometria disponível para exibição no mapa.")
+        st.stop()
+
+    # ----------------------------------------------------
+    # 2) Criar mapa sem tile inicial
+    # ----------------------------------------------------
+    m = folium.Map(tiles=None)
+
+    bounds = gdf_map.total_bounds
+    m.fit_bounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]])
+
+    # ----------------------------------------------------
+    # 3) Camadas Base (controle via LayerControl)
+    # ----------------------------------------------------
+
+    # OpenStreetMap
+    folium.TileLayer(
+        "OpenStreetMap",
+        name="OpenStreetMap",
+        show=True,
+    ).add_to(m)
+
+    # Esri World Imagery
+    folium.TileLayer(
+        tiles="https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri",
+        name="Esri World Imagery",
+        show=False,
+    ).add_to(m)
+
+    # Google Satélite
+    folium.TileLayer(
+        tiles="https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+        attr="Google",
+        name="Google Satélite",
+        subdomains=["mt0", "mt1", "mt2", "mt3"],
+        show=False,
+    ).add_to(m)
+
+    # Google Híbrido
+    folium.TileLayer(
+        tiles="https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+        attr="Google",
+        name="Google Híbrido",
+        subdomains=["mt0", "mt1", "mt2", "mt3"],
+        show=False,
+    ).add_to(m)
+
+    # ----------------------------------------------------
+    # 4) Camada do Shape
+    # ----------------------------------------------------
+    color_map = {
+        "Todos os Dados": "#DFF500",
+        "Dados por Estado": "#F500B4",
+        "Dados por Empresa": "#00C4F5",
+        "Dados Empresa/Fazenda": "red",
+        "Dados por Município": "#F5C400",
+    }
+    color = color_map.get(tipo_exib, "blue")
+
+    fields = [c for c in ["UF", "MUNICIPIO", "EMPRESA", "FAZENDA"] if c in gdf_map.columns]
+    aliases_map = {
+        "UF": "UF",
+        "MUNICIPIO": "Município",
+        "EMPRESA": "Empresa",
+        "FAZENDA": "Fazenda",
+    }
+    aliases = [aliases_map.get(c, c) for c in fields]
+
+    folium.GeoJson(
+        gdf_map.to_json(),
+        name="Áreas (Shape)",
+        style_function=lambda x: {
+            "fillColor": color,
+            "color": color,
+            "weight": 1,
+            "fillOpacity": 0.55,
+        },
+        tooltip=folium.features.GeoJsonTooltip(
+            fields=fields,
+            aliases=aliases,
+            sticky=False,
+        ),
+    ).add_to(m)
+
+    # ----------------------------------------------------
+    # 5) Controle de Camadas (único método de seleção)
+    # ----------------------------------------------------
+    folium.LayerControl(collapsed=False).add_to(m)
+
+    # ----------------------------------------------------
+    # 6) Renderização
+    # ----------------------------------------------------
+    st_folium(
+        m,
+        width=1400,
+        height=600,
+        key="mapa_principal",
+        returned_objects=[],
+    )
+
+
+
+
+
+
 # ===== ABA 2: DADOS SHAPE (ORDENADA + REMOÇÃO LOCAL_PROJ + EXCEL) =====
 with tab2:
     st.markdown('<div class="section-title">Dados Shape</div>', unsafe_allow_html=True)
@@ -1381,3 +1488,4 @@ with tab4:
 
         
 logger.info("App carregado com sucesso.")
+
