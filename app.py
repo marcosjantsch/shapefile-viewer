@@ -172,7 +172,7 @@ if AUTH_ENABLED:
 # =====================================================================
 # CONSTANTES
 # =====================================================================
-GEO_PATH =  "Geo.shp"
+GEO_PATH = os.path.join("Shape", "Geo.shp")
 SIMPLIFICATION_TOLERANCE = 0.001
 MAX_FEATURES_FULL_MAP = 5000
 
@@ -877,36 +877,223 @@ with tab1:
         st.info("Nenhuma geometria encontrada com os filtros aplicados.")
 
 # ===== ABA 2: DADOS SHAPE =====
+# ===== ABA 2: DADOS SHAPE (AJUSTADA: ÁREAS 1 DECIMAL + EXPORT EXCEL) =====
+# ===== ABA 2: DADOS SHAPE (ORDENADA + REMOÇÃO LOCAL_PROJ + EXCEL) =====
 with tab2:
     st.markdown('<div class="section-title">Dados Shape</div>', unsafe_allow_html=True)
-    if st.session_state.aplicar:
-        if gdf_filtered is not None and not gdf_filtered.empty:
-            st.dataframe(gdf_filtered.drop(columns=["geometry"], errors="ignore"), use_container_width=True, height=520)
-        else:
-            st.info("Nenhum dado filtrado para exibir.")
-    else:
-        st.info("Clique em 'Aplicar Filtros' na sidebar para ver os dados do shapefile.")
 
-# ===== ABA 3: DADOS DE CLIMA =====
+    if not st.session_state.get("aplicar", False):
+        st.info("Clique em 'Aplicar Filtros' na sidebar para ver os dados do shapefile.")
+        st.stop()
+
+    if gdf_filtered is None or gdf_filtered.empty:
+        st.info("Nenhum dado filtrado para exibir.")
+        st.stop()
+
+    # ----------------------------------------------------
+    # 1) Preparação
+    # ----------------------------------------------------
+    df_shape = gdf_filtered.copy()
+    df_shape = df_shape.drop(columns=["geometry"], errors="ignore")
+    df_shape.columns = [str(c).strip() for c in df_shape.columns]
+
+    # Corrige possíveis variações/typos
+    aliases = {
+        "AREA_PORDUT": "AREA_PRODU",
+        "AREA_PRODUT": "AREA_PRODU",
+        "AREA_PRODUTIVA": "AREA_PRODU",
+    }
+    df_shape = df_shape.rename(columns={k: v for k, v in aliases.items() if k in df_shape.columns})
+
+    # ----------------------------------------------------
+    # 2) Remover LOCAL_PROJ
+    # ----------------------------------------------------
+    df_shape = df_shape.drop(columns=["LOCAL_PROJ"], errors="ignore")
+
+    # ----------------------------------------------------
+    # 3) Ajustar casas decimais
+    # ----------------------------------------------------
+    for col_area in ["AREA_T", "AREA_PRODU"]:
+        if col_area in df_shape.columns:
+            df_shape[col_area] = pd.to_numeric(df_shape[col_area], errors="coerce").round(1)
+
+    # ----------------------------------------------------
+    # 4) Reordenar colunas conforme solicitado
+    # ----------------------------------------------------
+    ordem_prioritaria = [
+        "UF",
+        "EMPRESA",
+        "FAZENDA",
+        "MUNICIPIO",
+        "AREA_T",
+        "AREA_PRODU",
+        "CENTROIDE_",
+        "CENTROID_1",
+    ]
+
+    colunas_existentes = [c for c in ordem_prioritaria if c in df_shape.columns]
+    outras_colunas = [c for c in df_shape.columns if c not in colunas_existentes]
+
+    df_shape = df_shape[colunas_existentes + outras_colunas]
+
+    # ----------------------------------------------------
+    # 5) Exportação Excel
+    # ----------------------------------------------------
+    import io
+
+    def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Dados_Shape") -> bytes:
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+        return output.getvalue()
+
+    excel_bytes = df_to_excel_bytes(df_shape, sheet_name="Dados_Shape")
+
+    st.download_button(
+        label="⬇️ Exportar para Excel (.xlsx)",
+        data=excel_bytes,
+        file_name="dados_shape.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    # ----------------------------------------------------
+    # 6) Exibição
+    # ----------------------------------------------------
+    st.dataframe(df_shape, use_container_width=True, height=520)
+    st.caption(f"Total de registros: {len(df_shape)}")
+    st.caption(f"Colunas: {list(df_shape.columns)}")
+
+
+
+
+
+
+# ===== ABA 3: DADOS DE CLIMA (AJUSTADA: DATA DD-MM-AAAA + ANO + MÊS + ÁREAS 1 DECIMAL + EXPORT EXCEL) =====
+
+# ===== ABA 3: DADOS DE CLIMA (ORDEM ESPECÍFICA + EXCEL) =====
 with tab3:
     st.markdown('<div class="section-title">Dados de Clima</div>', unsafe_allow_html=True)
 
-    if st.session_state.aplicar:
-        if not df_csv.empty:
-            st.dataframe(df_csv, use_container_width=True, height=520)
-            st.caption(f"Total de registros: {len(df_csv)}")
-            st.caption(f"Colunas: {list(df_csv.columns)}")
-        else:
-            st.warning("Nenhum dado de clima filtrado.")
-    else:
+    if not st.session_state.get("aplicar", False):
         st.info("Clique em 'Aplicar Filtros' na sidebar para carregar os dados de clima.")
+        st.stop()
 
-# ===== ABA 4: ANÁLISE AVANÇADA =====
+    if df_csv is None or df_csv.empty:
+        st.warning("Nenhum dado de clima filtrado.")
+        st.stop()
 
-# ===== ABA 4: ANÁLISE AVANÇADA (REESCRITA) =====
-# ===== ABA 4: ANÁLISE AVANÇADA (FORMATO DO 1º CÓDIGO + MÉTRICA DE CARREGAMENTO) =====
+    # ----------------------------------------------------
+    # 1) Preparação
+    # ----------------------------------------------------
+    dfc = df_csv.copy()
+    dfc.columns = [str(c).strip() for c in dfc.columns]
 
-# ===== ABA 4: ANÁLISE AVANÇADA (COMPLETA / REESCRITA) =====
+    aliases = {
+        "Data": "DATA",
+        "data": "DATA",
+        "AREA_PORDUT": "AREA_PRODU",
+        "AREA_PRODUT": "AREA_PRODU",
+        "AREA_PRODUTIVA": "AREA_PRODU",
+    }
+    dfc = dfc.rename(columns={k: v for k, v in aliases.items() if k in dfc.columns})
+
+    if "DATA" not in dfc.columns:
+        st.error("❌ Coluna DATA não encontrada.")
+        st.stop()
+
+    dfc["DATA"] = pd.to_datetime(dfc["DATA"], errors="coerce")
+    dfc = dfc.dropna(subset=["DATA"]).copy()
+
+    # ----------------------------------------------------
+    # 2) ANO e MÊS (PT-BR)
+    # ----------------------------------------------------
+    meses_pt = {
+        1: "Jan", 2: "Fev", 3: "Mar", 4: "Abr", 5: "Mai", 6: "Jun",
+        7: "Jul", 8: "Ago", 9: "Set", 10: "Out", 11: "Nov", 12: "Dez"
+    }
+
+    dfc["ANO"] = dfc["DATA"].dt.strftime("%Y")
+    dfc["MES"] = dfc["DATA"].dt.month.map(meses_pt)
+
+    # DATA no formato DD-MM-AAAA
+    dfc["DATA"] = dfc["DATA"].dt.strftime("%d-%m-%Y")
+
+    # ----------------------------------------------------
+    # 3) AREA_T e AREA_PRODU com 1 casa decimal
+    # ----------------------------------------------------
+    for col_area in ["AREA_T", "AREA_PRODU"]:
+        if col_area in dfc.columns:
+            dfc[col_area] = pd.to_numeric(dfc[col_area], errors="coerce").round(1)
+
+    # ----------------------------------------------------
+    # 4) ORDEM EXATA DAS COLUNAS
+    # ----------------------------------------------------
+    ordem_especifica = [
+        "DATA", "ANO", "MES",
+        "EMPRESA", "FAZENDA", "UF", "MUNICIPIO",
+        "AREA_T", "AREA_PRODU",
+        "PRECIP_CHIRPS_MM",
+        "TEMP_MEDIA_C", "TEMP_MIN_C", "TEMP_MAX_C", "AMPLITUDE_TERMICA_C",
+        "NOITES_FRIAS_Eucalipto_<15C", "NOITES_FRIAS_Pinus_<5C",
+        "ONDAS_CALOR_Eucalipto_>35C", "ONDAS_CALOR_Pinus_>32C",
+        "UMID_MEDIA_PCT", "UMID_MIN_PCT", "UMID_MAX_PCT",
+        "UMID_NOITE_MEDIA_PCT", "UMID_BAIXA_FLAG",
+        "VPD_KPA",
+        "VENTO_MEDIO_MS", "VENTO_MAX_MS", "DIRECAO_VENTO_GRAUS",
+        "RADIACAO_SOLAR_MJ_M2", "RADIACAO_LIQUIDA_MJ_M2",
+        "HORAS_SOL",
+        "ET0_MM_DIA", "ET_REAL_MM_DIA",
+        "DEFICIT_HIDRICO_MM",
+        "DIAS_SEM_CHUVA",
+        "INDICE_SECA",
+        "INDICE_RISCO_INCENDIO",
+        "RISCO_ESTRESSE_HIDRICO",
+        "ERA5_IMG_COUNT_DIA",
+        "CHIRPS_IMG_COUNT_DIA",
+        "CENTROIDE_LAT", "CENTROIDE_LON",
+    ]
+
+    colunas_existentes = [c for c in ordem_especifica if c in dfc.columns]
+    outras_colunas = [c for c in dfc.columns if c not in colunas_existentes]
+
+    dfc = dfc[colunas_existentes + outras_colunas]
+
+    # ----------------------------------------------------
+    # 5) Exportar para Excel
+    # ----------------------------------------------------
+    import io
+
+    def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Dados_Clima") -> bytes:
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+        return output.getvalue()
+
+    excel_bytes = df_to_excel_bytes(dfc, sheet_name="Dados_Clima")
+
+    st.download_button(
+        label="⬇️ Exportar para Excel (.xlsx)",
+        data=excel_bytes,
+        file_name="dados_clima.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    # ----------------------------------------------------
+    # 6) Exibição
+    # ----------------------------------------------------
+    st.dataframe(dfc, use_container_width=True, height=520)
+    st.caption(f"Total de registros: {len(dfc)}")
+    st.caption(f"Colunas: {list(dfc.columns)}")
+
+
+
+
+
+
+
+
+
+
 with tab4:
     st.markdown('<div class="section-title">Análise Avançada</div>', unsafe_allow_html=True)
 
@@ -923,7 +1110,7 @@ with tab4:
         st.stop()
 
     # ----------------------------------------------------
-    # 2) Métrica do carregamento + contexto
+    # 2) Contexto
     # ----------------------------------------------------
     st.success(f"✅ Analisando {len(df_csv)} registros no período selecionado.")
 
@@ -941,23 +1128,20 @@ with tab4:
         f4.write(f"**Fazenda:** {selected_fazenda if selected_fazenda else '—'}")
 
     # ----------------------------------------------------
-    # 3) Normalização + Conversão numérica BR (evita N/A)
+    # 3) Normalização + Conversão numérica BR
     # ----------------------------------------------------
     df_work = df_csv.copy()
     df_work.columns = [str(c).strip() for c in df_work.columns]
 
-    # aliases comuns -> nomes esperados no app
     aliases = {
-        "Data": "DATA",
-        "data": "DATA",
-        "Empresa": "EMPRESA",
-        "Fazenda": "FAZENDA",
-        "Município": "MUNICIPIO",
-        "Municipio": "MUNICIPIO",
-        "PRECIP": "PRECIP_CHIRPS_MM",
-        "PRECIP_MM": "PRECIP_CHIRPS_MM",
+        "Data": "DATA", "data": "DATA",
+        "Empresa": "EMPRESA", "Fazenda": "FAZENDA",
+        "Município": "MUNICIPIO", "Municipio": "MUNICIPIO",
+        "PRECIP": "PRECIP_CHIRPS_MM", "PRECIP_MM": "PRECIP_CHIRPS_MM",
         "TEMP_MEDIA": "TEMP_MEDIA_C",
         "UMID_MEDIA": "UMID_MEDIA_PCT",
+        "AREA_PRODUT": "AREA_PRODU",
+        "AREA_PRODUTIVA": "AREA_PRODU",
     }
     df_work = df_work.rename(columns={k: v for k, v in aliases.items() if k in df_work.columns})
 
@@ -983,17 +1167,17 @@ with tab4:
     if "DATA" in df_work.columns:
         df_work["DATA"] = pd.to_datetime(df_work["DATA"], errors="coerce")
         df_work = df_work.dropna(subset=["DATA"]).copy()
+    else:
+        st.error("❌ Coluna DATA não encontrada no CSV.")
+        st.stop()
 
-    # Converte colunas relevantes, se existirem
+    # Converter colunas numéricas relevantes (se existirem)
     numeric_candidates = [
-        "AREA_PRODU", "AREA_T",
+        "AREA_PRODU",
         "PRECIP_CHIRPS_MM",
         "TEMP_MEDIA_C", "TEMP_MIN_C", "TEMP_MAX_C", "AMPLITUDE_TERMICA_C",
-        "UMID_MEDIA_PCT", "UMID_MIN_PCT",
+        "UMID_MEDIA_PCT",
         "DIAS_SEM_CHUVA",
-        "INDICE_RISCO_INCENDIO",
-        "DEFICIT_HIDRICO_MM", "INDICE_SECA",
-        "RISCO_ESTRESSE_HIDRICO",
     ]
     for c in numeric_candidates:
         if c in df_work.columns:
@@ -1001,192 +1185,197 @@ with tab4:
 
     # Diagnóstico rápido
     with st.expander("🧪 Diagnóstico rápido — valores válidos", expanded=False):
-        cols_check = ["AREA_PRODU", "PRECIP_CHIRPS_MM", "TEMP_MEDIA_C", "UMID_MEDIA_PCT",
-                      "INDICE_RISCO_INCENDIO", "DEFICIT_HIDRICO_MM", "INDICE_SECA", "RISCO_ESTRESSE_HIDRICO"]
+        cols_check = ["AREA_PRODU", "PRECIP_CHIRPS_MM", "TEMP_MEDIA_C", "UMID_MEDIA_PCT", "DIAS_SEM_CHUVA"]
         info = {}
         for c in cols_check:
             if c in df_work.columns:
                 info[c] = f"{int(df_work[c].notna().sum())} / {len(df_work)}"
-        st.write(info if info else "Nenhuma coluna climática esperada foi encontrada.")
+        st.write(info if info else "Nenhuma coluna esperada foi encontrada.")
         st.write("Colunas disponíveis:", list(df_work.columns))
 
     # ----------------------------------------------------
-    # 4) Métricas agregadas (ajuste: déficit e seca = MÉDIA)
+    # 4) Funções auxiliares (ponderação + export excel)
     # ----------------------------------------------------
-    # Usamos a função existente e ajustamos os campos aqui sem mexer no resto do app.
-    with st.spinner("Calculando métricas e séries..."):
-        m = metricas_agregadas_casoB(df_work)
+    def wmean(values: pd.Series, weights: pd.Series) -> float:
+        v = pd.to_numeric(values, errors="coerce")
+        w = pd.to_numeric(weights, errors="coerce")
+        m = v.notna() & w.notna() & (w > 0)
+        if m.sum() == 0:
+            return float("nan")
+        return float((v[m] * w[m]).sum() / w[m].sum())
 
-    # Ajustes solicitados:
-    # - Déficit hídrico: média (não soma)
-    # - Índice seca: média (não soma)
-    if "DEFICIT_HIDRICO_MM" in df_work.columns:
-        m["deficit_hidrico_media"] = float(df_work["DEFICIT_HIDRICO_MM"].mean(skipna=True))
-    else:
-        m["deficit_hidrico_media"] = np.nan
+    def wmean_col(g: pd.DataFrame, value_col: str, weight_col: str = "AREA_PRODU") -> float:
+        if value_col not in g.columns or weight_col not in g.columns:
+            return float("nan")
+        return wmean(g[value_col], g[weight_col])
 
-    if "INDICE_SECA" in df_work.columns:
-        m["indice_seca_media"] = float(df_work["INDICE_SECA"].mean(skipna=True))
-    else:
-        m["indice_seca_media"] = np.nan
+    import io
+
+    def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Resumo_AnoMes") -> bytes:
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+        return output.getvalue()
 
     # ----------------------------------------------------
-    # 5) PAINEL DE MÉTRICAS (formato do 1º código)
-    #   - remove noites frias
-    #   - troca "Soma Déficit" por "Média Déficit"
-    #   - troca "Soma Índice Seca" por "Média Índice Seca"
+    # 5) Painel de Métricas (apenas Precip WP com 2 casas)
     # ----------------------------------------------------
     st.markdown('<div class="section-title">Painel de Métricas</div>', unsafe_allow_html=True)
+
+    precip_wp = np.nan
+    if all(c in df_work.columns for c in ["FAZENDA", "AREA_PRODU", "PRECIP_CHIRPS_MM"]):
+        areas = df_work.groupby("FAZENDA")["AREA_PRODU"].first()
+        p_sum = df_work.groupby("FAZENDA")["PRECIP_CHIRPS_MM"].sum(min_count=1)
+        tmp = pd.concat([areas.rename("A"), p_sum.rename("P")], axis=1).dropna()
+        tmp = tmp[tmp["A"] > 0]
+        if not tmp.empty:
+            precip_wp = float((tmp["P"] * tmp["A"]).sum() / tmp["A"].sum())
 
     c1, c2, c3 = st.columns(3)
     with c1:
         st.metric(
             "Precipitação (média ponderada por AREA_PRODU)",
-            f"{m['precip_wp']:.4f}" if pd.notna(m.get("precip_wp")) else "N/A",
+            f"{precip_wp:.2f}" if pd.notna(precip_wp) else "N/A",
         )
     with c2:
-        st.metric(
-            "Temperatura média",
-            f"{m['temp_mean']:.2f} °C" if pd.notna(m.get("temp_mean")) else "N/A",
-        )
+        st.metric(" ", " ")
     with c3:
-        st.metric(
-            "Umidade média",
-            f"{m['umid_mean']:.2f} %" if pd.notna(m.get("umid_mean")) else "N/A",
-        )
-
-    c4, c5, c6 = st.columns(3)
-    with c4:
-        st.metric(
-            "Máximo Risco Incêndio",
-            f"{m['indice_risco_incendio_max']:.2f}" if pd.notna(m.get("indice_risco_incendio_max")) else "N/A",
-        )
-    with c5:
-        st.metric(
-            "Média Déficit Hídrico (mm)",
-            f"{m['deficit_hidrico_media']:.2f}" if pd.notna(m.get("deficit_hidrico_media")) else "N/A",
-        )
-    with c6:
-        st.metric(
-            "Média Índice Seca",
-            f"{m['indice_seca_media']:.2f}" if pd.notna(m.get("indice_seca_media")) else "N/A",
-        )
-
-    c7, c8, c9 = st.columns(3)
-    with c7:
-        st.metric(
-            "Média Risco Estresse Hídrico",
-            f"{m['risco_estresse_hidrico_media']:.2f}" if pd.notna(m.get("risco_estresse_hidrico_media")) else "N/A",
-        )
-    with c8:
-        st.metric(" ", " ")  # espaço para manter grid 3 colunas
-    with c9:
         st.metric(" ", " ")
 
     # ----------------------------------------------------
-    # 6) TABELA — RESUMO POR FAZENDA (formato do 1º código)
-    #   Ajuste coerente: déficit e seca como MÉDIA no resumo também.
+    # 6) TABELA — RESUMO POR ANO/MÊS (precip ponderada por área)
     # ----------------------------------------------------
     st.markdown("---")
-    st.markdown('<div class="section-title">Tabela — Resumo por Fazenda</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Tabela — Resumo por Ano/Mês</div>', unsafe_allow_html=True)
 
-    if "FAZENDA" not in df_work.columns:
-        st.error("❌ Não foi possível gerar o resumo: coluna **FAZENDA** não existe no CSV.")
-    else:
-        # Gerar resumo padrão
-        res = resumo_por_fazenda(df_work)
+    required_cols = ["DATA", "FAZENDA", "AREA_PRODU", "PRECIP_CHIRPS_MM"]
+    missing_req = [c for c in required_cols if c not in df_work.columns]
+    if missing_req:
+        st.error(f"❌ Não foi possível gerar o resumo por Ano/Mês. Faltando colunas: {missing_req}")
+        st.stop()
 
-        # Ajustar no resumo (se as colunas existirem no dataset original)
-        # Obs.: resumo_por_fazenda original usa soma para DEFICIT/SECA.
-        # Aqui substituímos por médias e reformatamos labels mantendo a tabela.
-        try:
-            if isinstance(res, pd.DataFrame) and not res.empty:
-                # Recalcular médias por fazenda para déficit e seca (se existirem no df_work)
-                if "DEFICIT_HIDRICO_MM" in df_work.columns:
-                    dh = df_work.groupby("FAZENDA", dropna=False)["DEFICIT_HIDRICO_MM"].mean().round(2)
-                    # tenta achar o nome já renomeado pelo resumo original
-                    if "Soma Déficit Hídrico (mm)" in res.columns:
-                        res = res.drop(columns=["Soma Déficit Hídrico (mm)"], errors="ignore")
-                    res["Média Déficit Hídrico (mm)"] = dh
+    dfm = df_work.copy()
+    dfm["ANO_MES"] = dfm["DATA"].dt.to_period("M").astype(str)
 
-                if "INDICE_SECA" in df_work.columns:
-                    iseca = df_work.groupby("FAZENDA", dropna=False)["INDICE_SECA"].mean().round(2)
-                    if "Soma Índice Seca" in res.columns:
-                        res = res.drop(columns=["Soma Índice Seca"], errors="ignore")
-                    res["Média Índice Seca"] = iseca
+    # Agrega por FAZENDA + ANO_MES (bloco mensal por fazenda)
+    agg_faz_mes = {
+        "AREA_PRODU": "first",
+        "PRECIP_CHIRPS_MM": "sum",
+    }
+    if "TEMP_MEDIA_C" in dfm.columns:
+        agg_faz_mes["TEMP_MEDIA_C"] = "mean"
+    if "AMPLITUDE_TERMICA_C" in dfm.columns:
+        agg_faz_mes["AMPLITUDE_TERMICA_C"] = "mean"
+    if "UMID_MEDIA_PCT" in dfm.columns:
+        agg_faz_mes["UMID_MEDIA_PCT"] = "mean"
+    if "TEMP_MAX_C" in dfm.columns:
+        agg_faz_mes["TEMP_MAX_C"] = "max"
+    if "TEMP_MIN_C" in dfm.columns:
+        agg_faz_mes["TEMP_MIN_C"] = "min"
+    if "DIAS_SEM_CHUVA" in dfm.columns:
+        agg_faz_mes["DIAS_SEM_CHUVA"] = "max"
 
-                # Remover noites frias se aparecerem (caso o resumo original ainda inclua)
-                res = res.drop(
-                    columns=[
-                        "Soma Noites Frias Eucalipto (<15C)",
-                        "Soma Noites Frias Pinus (<5C)",
-                    ],
-                    errors="ignore",
-                )
+    faz_mes = (
+        dfm.groupby(["ANO_MES", "FAZENDA"], dropna=False)
+        .agg(agg_faz_mes)
+        .reset_index()
+        .rename(columns={
+            "PRECIP_CHIRPS_MM": "PRECIP_MENSAL",
+            "TEMP_MEDIA_C": "TEMP_MEDIA_MENSAL",
+            "AMPLITUDE_TERMICA_C": "AMP_TERMICA_MENSAL",
+            "UMID_MEDIA_PCT": "UMID_MEDIA_MENSAL",
+            "TEMP_MAX_C": "TEMP_MAX_MENSAL",
+            "TEMP_MIN_C": "TEMP_MIN_MENSAL",
+            "DIAS_SEM_CHUVA": "DIAS_SEM_CHUVA_MAX_MENSAL",
+        })
+    )
 
-                # Ordenação amigável (se as colunas existirem)
-                preferred = [
-                    "AREA_PRODU", "AREA_T",
-                    "Soma Precipitação (mm)",
-                    "Média Temp (°C)",
-                    "Menor Temp Min (°C)",
-                    "Maior Temp Max (°C)",
-                    "Média Amplitude Térmica (°C)",
-                    "Média Umidade Min (%)",
-                    "Máximo Dias Sem Chuva",
-                    "Média Déficit Hídrico (mm)",
-                    "Média Índice Seca",
-                    "Média Risco Estresse Hídrico",
-                    "Soma Ondas de Calor (>35C)",
-                    "Média Umidade (%)",
-                    "Máximo Risco Incêndio",
-                ]
-                cols_final = [c for c in preferred if c in res.columns] + [c for c in res.columns if c not in preferred]
-                res = res[cols_final]
+    # Segurança de pesos
+    faz_mes["AREA_PRODU"] = pd.to_numeric(faz_mes["AREA_PRODU"], errors="coerce")
+    faz_mes = faz_mes.dropna(subset=["AREA_PRODU"])
+    faz_mes = faz_mes[faz_mes["AREA_PRODU"] > 0].copy()
 
-                st.success(f"✅ Resumo gerado: {len(res)} fazendas")
-                st.dataframe(res, use_container_width=True, height=420)
-            else:
-                st.error("❌ Resumo não disponível.")
-        except Exception as e:
-            st.error(f"❌ Erro ao ajustar resumo: {e}")
-            with st.expander("🧪 Diagnóstico — amostra", expanded=False):
-                st.dataframe(df_work.head(20), use_container_width=True)
+    # Agrega por ANO_MES (resultado final)
+    out_rows = []
+    for ano_mes, g in faz_mes.groupby("ANO_MES", dropna=False):
+        row = {"Ano/Mês": str(ano_mes)}
+
+        # AREA_PRODU consolidada no mês = soma das áreas (por fazenda)
+        row["AREA_PRODU"] = float(g["AREA_PRODU"].sum(skipna=True))
+
+        # Precipitação: MÉDIA PONDERADA por AREA_PRODU do TOTAL mensal por fazenda
+        row["Precipitação (mm)"] = wmean_col(g, "PRECIP_MENSAL", "AREA_PRODU")
+
+        # Médias mensais (ponderadas por área) das médias por fazenda
+        row["Média Temp (°C)"] = wmean_col(g, "TEMP_MEDIA_MENSAL", "AREA_PRODU") if "TEMP_MEDIA_MENSAL" in g.columns else np.nan
+        row["Média Amplitude Térmica (°C)"] = wmean_col(g, "AMP_TERMICA_MENSAL", "AREA_PRODU") if "AMP_TERMICA_MENSAL" in g.columns else np.nan
+        row["Média Umidade (%)"] = wmean_col(g, "UMID_MEDIA_MENSAL", "AREA_PRODU") if "UMID_MEDIA_MENSAL" in g.columns else np.nan
+
+        # Extremos no mês (entre fazendas)
+        row["Maior Temp (°C)"] = float(pd.to_numeric(g.get("TEMP_MAX_MENSAL"), errors="coerce").max(skipna=True)) if "TEMP_MAX_MENSAL" in g.columns else np.nan
+        row["Menor Temp (°C)"] = float(pd.to_numeric(g.get("TEMP_MIN_MENSAL"), errors="coerce").min(skipna=True)) if "TEMP_MIN_MENSAL" in g.columns else np.nan
+
+        # Máx dias sem chuva no mês (por fazenda) -> pondera por área
+        row["Máx Dias Sem Chuva (média ponderada)"] = wmean_col(g, "DIAS_SEM_CHUVA_MAX_MENSAL", "AREA_PRODU") if "DIAS_SEM_CHUVA_MAX_MENSAL" in g.columns else np.nan
+
+        out_rows.append(row)
+
+    resumo_mes = pd.DataFrame(out_rows)
+
+    # Ordena Ano/Mês
+    resumo_mes["_DT"] = pd.to_datetime(resumo_mes["Ano/Mês"] + "-01", errors="coerce")
+    resumo_mes = resumo_mes.sort_values("_DT").drop(columns=["_DT"])
+
+    # Arredondamentos
+    if "AREA_PRODU" in resumo_mes.columns:
+        resumo_mes["AREA_PRODU"] = pd.to_numeric(resumo_mes["AREA_PRODU"], errors="coerce").round(1)  # 1 casa
+    if "Precipitação (mm)" in resumo_mes.columns:
+        resumo_mes["Precipitação (mm)"] = pd.to_numeric(resumo_mes["Precipitação (mm)"], errors="coerce").round(2)
+
+    for c in [
+        "Média Temp (°C)", "Média Amplitude Térmica (°C)", "Média Umidade (%)",
+        "Maior Temp (°C)", "Menor Temp (°C)", "Máx Dias Sem Chuva (média ponderada)"
+    ]:
+        if c in resumo_mes.columns:
+            resumo_mes[c] = pd.to_numeric(resumo_mes[c], errors="coerce").round(2)
+
+    st.success(f"✅ Resumo gerado: {len(resumo_mes)} períodos (Ano/Mês)")
+    st.dataframe(resumo_mes, use_container_width=True, height=420)
+
+    # Exportação DIRETO para Excel
+    excel_bytes = df_to_excel_bytes(resumo_mes, sheet_name="Resumo_AnoMes")
+    st.download_button(
+        label="⬇️ Baixar Tabela em Excel (.xlsx)",
+        data=excel_bytes,
+        file_name="resumo_ano_mes.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
     # ----------------------------------------------------
-    # 7) SÉRIES (formato do 1º código)
+    # 7) GRÁFICOS — um por item da tabela (SEM AREA_PRODU)
     # ----------------------------------------------------
     st.markdown("---")
-    st.markdown('<div class="section-title">Séries</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Gráficos por Ano/Mês</div>', unsafe_allow_html=True)
 
-    s1, s2, s3 = st.tabs([
-        "🌧️ Dias sem chuva (ponderado por AREA_PRODU)",
-        "🔥 Índice de Risco de Incêndio",
-        "💧 Risco de Estresse Hídrico"
-    ])
+    chart_df = resumo_mes.copy()
+    chart_df["DATA_REF"] = pd.to_datetime(chart_df["Ano/Mês"] + "-01", errors="coerce")
 
-    with s1:
-        serie = m.get("serie_dias_sem_chuva_wp", pd.DataFrame())
-        if isinstance(serie, pd.DataFrame) and not serie.empty and {"DATA", "DIAS_SEM_CHUVA_MEDIA_PONDERADA"}.issubset(serie.columns):
-            st.line_chart(serie.set_index("DATA")["DIAS_SEM_CHUVA_MEDIA_PONDERADA"])
-        else:
-            st.info("Sem dados suficientes para esta série (verifique `DIAS_SEM_CHUVA` e `AREA_PRODU`).")
+    cols_plot = [
+        c for c in chart_df.columns
+        if c not in ["Ano/Mês", "DATA_REF", "AREA_PRODU"]
+    ]
 
-    with s2:
-        serie2 = m.get("serie_indice_risco_incendio", pd.DataFrame())
-        if isinstance(serie2, pd.DataFrame) and not serie2.empty and {"DATA", "INDICE_RISCO_INCENDIO_MEDIA"}.issubset(serie2.columns):
-            st.line_chart(serie2.set_index("DATA")["INDICE_RISCO_INCENDIO_MEDIA"])
-        else:
-            st.info("Sem dados suficientes para esta série (verifique `INDICE_RISCO_INCENDIO`).")
-
-    with s3:
-        serie3 = m.get("serie_risco_estresse_hidrico", pd.DataFrame())
-        if isinstance(serie3, pd.DataFrame) and not serie3.empty and {"DATA", "RISCO_ESTRESSE_HIDRICO_MEDIA"}.issubset(serie3.columns):
-            st.line_chart(serie3.set_index("DATA")["RISCO_ESTRESSE_HIDRICO_MEDIA"])
-        else:
-            st.info("Sem dados suficientes para esta série (verifique `RISCO_ESTRESSE_HIDRICO`).")
+    for col in cols_plot:
+        fig = px.line(
+            chart_df.dropna(subset=["DATA_REF"]),
+            x="DATA_REF",
+            y=col,
+            markers=True,
+            title=col
+        )
+        fig.update_layout(xaxis_title="Ano/Mês", yaxis_title=col)
+        st.plotly_chart(fig, use_container_width=True)
 
 
-
+        
 logger.info("App carregado com sucesso.")
-
