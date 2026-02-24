@@ -172,7 +172,7 @@ if AUTH_ENABLED:
 # =====================================================================
 # CONSTANTES
 # =====================================================================
-GEO_PATH = os.path.join("Shape", "Geo.shp")
+GEO_PATH = "Geo.shp"
 SIMPLIFICATION_TOLERANCE = 0.001
 MAX_FEATURES_FULL_MAP = 5000
 
@@ -1379,3 +1379,4 @@ with tab4:
 
         
 logger.info("App carregado com sucesso.")
+
