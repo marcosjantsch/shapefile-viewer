@@ -7,7 +7,7 @@ credentials:
     marcos:
       email: marcos.jantsch@valorflorestal.com.br
       name: Marcos
-      password: $2b$12$N7I9kz7CGdH5Gr6xYQ47xeu083YEkp1EUHvJt/3k3PgKEgLdXiuli
+      password: $2b$12$G4T8D0eMttkk9uRhSSHXpeGGJRiSRBOWfBfj4U59SclDtu1PsRtGa
       role: admin
     MarcosJ:
       email: marcos.jantsch@gmail.com
@@ -18,7 +18,7 @@ credentials:
       name: Cesar
       email: marcos.jantsch@valorflorestal.com.br
       role: user
-      password: $2b$12$Rz4dA0quODGfjqckkKgD9uSRVSph8HF925dwfU6yD1.PKwNjQ/GyK
+      password: $2b$12$CaGeVtoAXW0XORtjYOc6zOMQRjaxNnleAPekIU2mQC5lhQDIVqv7y
     Renato:
       name: RenatoVF
       email: ''
