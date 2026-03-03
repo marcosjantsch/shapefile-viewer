@@ -14,7 +14,7 @@ CSV_URLS = {
     2011: "",
     2012: "",
     2013: "https://1drv.ms/x/c/8b88b81c064543d3/IQCoP83W-FYER5KQu8DBuTTaAWacNQ23ZuxXLpHH_-NMqZ4?e=rdeZd5",
-    2014: "",
+    2014: "https://1drv.ms/x/c/8b88b81c064543d3/IQCK7rZcj6Q9SpTspGS8JPcjAQzuYGkujyGStr4cV6H4t-M?e=mmPM18",
     2015: "https://1drv.ms/x/c/8b88b81c064543d3/IQBomFaAecYAQL4Nsbj0Rzr0AaWsk2ixz4heNKF9Lu3r8ug?e=Xy7VGU",
     2016: "https://1drv.ms/x/c/8b88b81c064543d3/IQAq1c_k3axXRLWxLt8SQu3BARRlXjhe-6rHVYqaGUqoWXQ?e=ic1tLV",
     2017: "https://1drv.ms/x/c/8b88b81c064543d3/IQDc3zffIXaSRpGrWZ01szLrAY_uynjSzFZBwOn8TmRoBgw?e=OHUat0",
@@ -26,6 +26,8 @@ CSV_URLS = {
     2023: "https://1drv.ms/x/c/8b88b81c064543d3/IQASP70qtOUER43nSlVhRnyBAfwNm9Ftc3BMNi9akvMfJ4M?e=gxf0iQ",
     2024: "https://1drv.ms/x/c/8b88b81c064543d3/IQBRY9FjSoiYTbqQBlaf7ow9ARAhVOTqupUR70uECefpMs8?e=crUVdI",
     2025: "https://1drv.ms/x/c/8b88b81c064543d3/IQDEpcmoHOHLSYwHj8uo99hqAVYedbu5TwWoMlLZX1MwYNI?e=mNJvcU",
+    2026: "https://1drv.ms/x/c/8b88b81c064543d3/IQBEGS4yoW65QrrJNpEcPq9gAU37MqQKohr5fgUnD4-qnsc?e=MjDvTL",
+		
     }
 
 def load_urls():
@@ -34,4 +36,3 @@ def load_urls():
 
 def get_url_by_year(urls_dict, year: int):
     return urls_dict.get(int(year))
-
