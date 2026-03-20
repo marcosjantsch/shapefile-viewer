@@ -3,7 +3,7 @@
 app.py — Avant | Visualizador de Shapefile + Dados Climáticos
 VERSÃO CORRIGIDA COM DIAGNÓSTICO DE DADOS
 """
-
+mmmmmmm
 import os
 import io
 import logging
