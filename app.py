@@ -643,6 +643,7 @@ else:
 # =====================================================================
 add_logo_sidebar()
 st.sidebar.title("Avant - Clima")
+st.sidebar.title("V1.1")
 
 st.sidebar.markdown("---")
 
