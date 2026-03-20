@@ -1114,7 +1114,7 @@ with tab2:
     # ----------------------------------------------------
     # 6) Exibição
     # ----------------------------------------------------
-    st.dataframe(df_shape, use_container_width=True, height=520)
+    st.dataframe(df_shape, width="stretch", height=520)
     st.caption(f"Total de registros: {len(df_shape)}")
     st.caption(f"Colunas: {list(df_shape.columns)}")
 
