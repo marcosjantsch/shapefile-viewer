@@ -792,7 +792,18 @@ if st.session_state.aplicar:
             
                 try:
                     df_y = load_csv_from_url_robust(url, y)
-            
+
+                    # 🔥 FILTRAR AQUI (ANTES DE QUALQUER CONCAT)
+                    if "DATA" in df_y.columns:
+                        df_y["DATA"] = pd.to_datetime(df_y["DATA"], errors="coerce")
+                        df_y = df_y.dropna(subset=["DATA"])
+                        df_y = df_y[
+                            (df_y["DATA"].dt.date >= start_date) &
+                            (df_y["DATA"].dt.date <= end_date)
+                        ]
+                                            
+
+                    
                     if df_y is None or df_y.empty:
                         continue
             
@@ -884,7 +895,13 @@ if st.session_state.aplicar:
             logger.info(f"Após filtro de modo: {len(df_csv)} registros")
             log_container.success(f"🔎 Após filtros: {len(df_csv)} registros")
 
-
+                        # 🔥 OTIMIZAÇÃO DE MEMÓRIA (INSERIR AQUI)
+            if not df_csv.empty:
+                if "EMPRESA" in df_csv.columns:
+                    df_csv["EMPRESA"] = df_csv["EMPRESA"].astype("category")
+            
+                if "FAZENDA" in df_csv.columns:
+                    df_csv["FAZENDA"] = df_csv["FAZENDA"].astype("category")
 # =====================================================================
 # ABAS
 # =====================================================================
@@ -1269,7 +1286,10 @@ with tab4:
     # ----------------------------------------------------
     # 3) Normalização + Conversão numérica BR
     # ----------------------------------------------------
-    df_work = df_csv.copy()
+    df_work = df_csv
+    
+
+    
     df_work.columns = [str(c).strip() for c in df_work.columns]
 
     aliases = {
