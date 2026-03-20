@@ -1236,7 +1236,7 @@ with tab3:
     # ----------------------------------------------------
     # 6) Exibição
     # ----------------------------------------------------
-    st.dataframe(dfc, use_container_width=True, height=520)
+    st.dataframe(dfc, use_container_width="stretch", height=520)
     st.caption(f"Total de registros: {len(dfc)}")
     st.caption(f"Colunas: {list(dfc.columns)}")
 
@@ -1500,7 +1500,7 @@ with tab4:
             resumo_mes[c] = pd.to_numeric(resumo_mes[c], errors="coerce").round(2)
 
     st.success(f"✅ Resumo gerado: {len(resumo_mes)} períodos (Ano/Mês)")
-    st.dataframe(resumo_mes, use_container_width=True, height=420)
+    st.dataframe(resumo_mes, use_container_width="stretch", height=420)
 
     # Exportação DIRETO para Excel
     excel_bytes = df_to_excel_bytes(resumo_mes, sheet_name="Resumo_AnoMes")
@@ -1534,7 +1534,7 @@ with tab4:
             title=col,
         )
         fig.update_layout(xaxis_title="Ano/Mês", yaxis_title=col)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width="stretch")
 
 
         
