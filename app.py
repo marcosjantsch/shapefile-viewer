@@ -10,6 +10,9 @@ import logging
 from datetime import date
 from typing import Optional, List, Dict
 
+import io
+import glob
+
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -18,6 +21,10 @@ from streamlit_folium import st_folium
 import requests
 import streamlit as st
 import plotly.express as px
+
+
+
+
 
 # =====================================================================
 # LOGGING
@@ -221,47 +228,96 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def load_csv_from_url_robust(url, year):
-    """Carrega CSV de URL com tratamento robusto de codificação."""
-    
-    if 'example.com' in url:
-        return generate_fictitious_csv_data(year)
-
+def load_csv_from_url_robust(url: str, year: int) -> Optional[pd.DataFrame]:
     try:
-        if '1drv.ms' in url and 'download=1' not in url:
-            if '?' in url:
-                url = url + '&download=1'
-            else:
-                url = url + '?download=1'
-        
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        
-        encodings = ['utf-8', 'utf-8-sig', 'latin-1', 'iso-8859-1', 'cp1252']
-        separators = [';', ',', '\t', '|']
-        
-        for encoding in encodings:
-            for separator in separators:
+        logger.info("DEBUG >>> ENTROU NA FUNÇÃO load_csv_from_url_robust")
+        logger.info(f"DEBUG caminho recebido: {url}")
+
+        url = str(url).strip().replace("\\", "/")
+        is_local_file = os.path.isfile(url)
+
+        logger.info(f"DEBUG isfile: {is_local_file}")
+
+        if is_local_file:
+            logger.info("DEBUG >>> LENDO COMO ARQUIVO LOCAL")
+            with open(url, "rb") as f:
+                content = f.read()
+        else:
+            logger.info("DEBUG >>> LENDO COMO URL WEB")
+
+            if "1drv.ms" in url and "download=1" not in url:
+                url = url + ("&download=1" if "?" in url else "?download=1")
+
+            response = requests.get(url, timeout=180)
+            response.raise_for_status()
+            content = response.content
+
+        logger.info(f"DEBUG tamanho do arquivo (bytes): {len(content)}")
+
+        for enc in ["utf-8", "utf-8-sig", "latin-1", "iso-8859-1", "cp1252"]:
+            try:
+                text = content.decode(enc)
+                logger.info(f"DEBUG encoding OK: {enc}")
+            except Exception:
+                logger.info(f"DEBUG encoding falhou: {enc}")
+                continue
+
+            logger.info(f"DEBUG primeiras 300 chars:\n{text[:300]}")
+
+            for sep in [";", ",", "\t", "|"]:
                 try:
-                    content = response.content.decode(encoding)
                     df = pd.read_csv(
-                        io.StringIO(content),
-                        sep=separator,
-                        on_bad_lines='skip',
-                        engine='python'
+                        io.StringIO(text),
+                        sep=sep,
+                        engine="python",
+                        on_bad_lines="skip"
                     )
-                    
-                    if len(df.columns) > 1:
-                        df.columns = df.columns.str.strip()
-                        return df
-                except Exception:
+
+                    logger.info(
+                        f"DEBUG tentativa sep='{sep}' -> linhas={len(df)} cols={len(df.columns)} colunas={list(df.columns)[:10]}"
+                    )
+                    logger.info(f"DEBUG head sep='{sep}':\n{df.head(3).to_string()}")
+
+                    if df is None or df.empty:
+                        continue
+
+                    df.columns = [str(c).strip() for c in df.columns]
+
+                    if len(df.columns) <= 1:
+                        continue
+
+                    rename_map = {
+                        "Data": "DATA",
+                        "data": "DATA",
+                        "Empresa": "EMPRESA",
+                        "Fazenda": "FAZENDA",
+                        "Município": "MUNICIPIO",
+                        "Municipio": "MUNICIPIO",
+                        "AREA_PORDUT": "AREA_PRODU",
+                        "AREA_PRODUT": "AREA_PRODU",
+                    }
+
+                    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
+
+                    if "DATA" in df.columns:
+                        df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce", dayfirst=True)
+
+                    logger.info(f"✅ CSV {year} carregado: {len(df)} linhas e {len(df.columns)} colunas")
+                    return df
+
+                except Exception as e:
+                    logger.info(f"DEBUG sep='{sep}' falhou: {e}")
                     continue
-        
+
+        logger.warning(f"⚠️ Falha ao interpretar CSV do ano {year}")
         return None
-        
-    except requests.exceptions.RequestException as e:
-        st.error(f"❌ Erro ao baixar arquivo da URL {url}: {e}")
+
+    except Exception as e:
+        logger.error(f"❌ Erro ao carregar CSV {year}: {e}")
         return None
+
+
+
 
 
 def generate_fictitious_csv_data(year):
@@ -353,11 +409,11 @@ def generate_map_full_optimized(gdf_to_display: gpd.GeoDataFrame, tipo_exibicao:
     m.fit_bounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]])
 
     color_map = {
-        "Todos os Dados": "gray",
-        "Dados por Estado": "green",
-        "Dados por Empresa": "blue",
-        "Dados Empresa/Fazenda": "red",
-        "Dados por Município": "orange",
+        "Todos os Dados": "#FF4500",
+        "Dados por Estado": "#FF1493",
+        "Dados por Empresa": "#4B0082",
+        "Dados Empresa/Fazenda": "#8B008B",
+        "Dados por Município": "#FF8C00",
     }
     color = color_map.get(tipo_exibicao, "blue")
 
@@ -643,8 +699,7 @@ else:
 # =====================================================================
 add_logo_sidebar()
 st.sidebar.title("Avant - Clima")
-st.sidebar.title("V1.1")
-
+st.sidebar.title("V1.2")
 st.sidebar.markdown("---")
 
 gdf_full = load_shapefile_full(GEO_PATH)
@@ -691,9 +746,34 @@ elif tipo_dado == "Dados por Município":
         selected_municipio = st.sidebar.selectbox("Selecione Município", municipios) if municipios else None
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("Período")
-start_date = st.sidebar.date_input("Data Inicial", value=date(2020, 1, 1))
-end_date = st.sidebar.date_input("Data Final", value=date.today())
+st.sidebar.subheader("Período mensal")
+
+anos_disponiveis = list(range(2000, 2026))
+meses_disponiveis = {
+    "Jan": 1, "Fev": 2, "Mar": 3, "Abr": 4, "Mai": 5, "Jun": 6,
+    "Jul": 7, "Ago": 8, "Set": 9, "Out": 10, "Nov": 11, "Dez": 12
+}
+
+col1, col2 = st.sidebar.columns(2)
+with col1:
+    start_mes_nome = st.selectbox("Mês inicial", list(meses_disponiveis.keys()), index=0)
+with col2:
+    start_ano = st.selectbox("Ano inicial", anos_disponiveis, index=anos_disponiveis.index(2025))
+
+col3, col4 = st.sidebar.columns(2)
+with col3:
+    end_mes_nome = st.selectbox("Mês final", list(meses_disponiveis.keys()), index=11)
+with col4:
+    end_ano = st.selectbox("Ano final", anos_disponiveis, index=anos_disponiveis.index(2025))
+
+start_date = date(start_ano, meses_disponiveis[start_mes_nome], 1)
+end_date = date(end_ano, meses_disponiveis[end_mes_nome], 1)
+
+
+
+
+
+
 apply = st.sidebar.button("✅ Aplicar Filtros")
 
 # Container fixo para logs logo abaixo do botão
@@ -772,99 +852,66 @@ if st.session_state.aplicar:
         ]
 
 # =====================================================================
-# CARREGAR CSVs — CORRIGIDO
+# =====================================================================
+# CARREGAR CSVs — URL / UPLOAD / PASTA LOCAL
+# =====================================================================
+
+# =====================================================================
+# CARREGAR CSVs — APENAS POR URL
 # =====================================================================
 df_csv = pd.DataFrame()
 
-if st.session_state.aplicar:
-    urls = load_urls()
-    years = get_years_in_range(start_date, end_date)
+if st.session_state.get("aplicar", False):
+    try:
+        urls = load_urls()
+        years = get_years_in_range(start_date, end_date)
 
-    if years:
-        with st.spinner(f"Carregando dados climáticos (anos: {', '.join(map(str, years))})..."):
-            df_csv = pd.DataFrame()
+        if years:
+            with st.spinner(f"Carregando dados climáticos (anos: {', '.join(map(str, years))})..."):
+                frames = []
 
-            for y in years:
-                url = get_url_by_year(urls, y)
-            
-                if not url:
-                    log_container.warning(f"⚠️ Sem URL para o ano {y}")
-                    continue
-            
-                try:
-                    df_y = load_csv_from_url_robust(url, y)
+                for y in years:
+                    url = get_url_by_year(urls, y)
 
-                    # 🔥 FILTRAR AQUI (ANTES DE QUALQUER CONCAT)
-                    if "DATA" in df_y.columns:
-                        df_y["DATA"] = pd.to_datetime(df_y["DATA"], errors="coerce")
-                        df_y = df_y.dropna(subset=["DATA"])
-                        df_y = df_y[
-                            (df_y["DATA"].dt.date >= start_date) &
-                            (df_y["DATA"].dt.date <= end_date)
-                        ]
-                                            
-
-                    
-                    if df_y is None or df_y.empty:
+                    if not url:
+                        log_container.warning(f"⚠️ Sem URL para o ano {y}")
                         continue
-            
-                    log_container.success(f"✅ {y}: carregado ({df_y.shape[0]} linhas)")
-            
-                    # 🔥 FILTRAR ANTES DE ACUMULAR
-                    if "DATA" in df_y.columns:
-                        df_y["DATA"] = pd.to_datetime(df_y["DATA"], errors="coerce")
-                        df_y = df_y.dropna(subset=["DATA"])
-                        df_y = df_y[
-                            (df_y["DATA"].dt.date >= start_date) &
-                            (df_y["DATA"].dt.date <= end_date)
-                        ]
-            
-                    # 🔥 FILTRO POR TIPO
-                    if tipo_dado == "Dados por Estado" and selected_uf and "UF" in df_y.columns:
-                        df_y = df_y[df_y["UF"].astype(str) == str(selected_uf)]
-            
-                    elif tipo_dado == "Dados por Empresa" and selected_empresa and "EMPRESA" in df_y.columns:
-                        df_y = df_y[df_y["EMPRESA"].astype(str) == str(selected_empresa)]
-            
-                    elif (
-                        tipo_dado == "Dados Empresa/Fazenda"
-                        and selected_empresa
-                        and selected_fazenda
-                        and all(c in df_y.columns for c in ["EMPRESA", "FAZENDA"])
-                    ):
-                        df_y = df_y[
-                            (df_y["EMPRESA"].astype(str) == str(selected_empresa)) &
-                            (df_y["FAZENDA"].astype(str) == str(selected_fazenda))
-                        ]
-            
-                    elif (
-                        tipo_dado == "Dados por Município"
-                        and selected_uf
-                        and selected_municipio
-                        and all(c in df_y.columns for c in ["UF", "MUNICIPIO"])
-                    ):
-                        df_y = df_y[
-                            (df_y["UF"].astype(str) == str(selected_uf)) &
-                            (df_y["MUNICIPIO"].astype(str) == str(selected_municipio))
-                        ]
-            
-                    # 🔥 CONCAT CONTROLADO (sem lista gigante)
-                    df_csv = pd.concat([df_csv, df_y], ignore_index=True)
-            
-                except Exception as e:
-                    log_container.error(f"❌ {y}: erro {e}")
-            
-            log_container.info(f"📦 Total de {len(df_csv)} registros após carga otimizada")
 
-        # ✅ FILTRAR POR DATA (APENAS SE df_csv NÃO ESTIVER VAZIO)
-        if not df_csv.empty and "DATA" in df_csv.columns:
-            df_csv["DATA"] = pd.to_datetime(df_csv["DATA"], errors="coerce")
-            df_csv = df_csv.dropna(subset=["DATA"])
-            df_csv = df_csv[(df_csv["DATA"].dt.date >= start_date) & (df_csv["DATA"].dt.date <= end_date)].copy()
-            logger.info(f"Após filtro de data: {len(df_csv)} registros")
+                    try:
+                        df_y = load_csv_from_url_robust(url, y)
 
-        # ✅ FILTRAR POR MODO (APENAS SE df_csv NÃO ESTIVER VAZIO)
-        if not df_csv.empty:
+                        if df_y is None or df_y.empty:
+                            log_container.warning(f"⚠️ Ano {y} sem dados válidos")
+                            continue
+
+                        frames.append(df_y)
+                        log_container.success(f"✅ {y}: carregado")
+
+                    except Exception as e:
+                        log_container.error(f"❌ {y}: erro {e}")
+
+                if frames:
+                    df_csv = pd.concat(frames, ignore_index=True)
+
+        # aplica os filtros do app original
+        if df_csv is not None and not df_csv.empty:
+            df_csv = _normalize_columns(df_csv)
+
+            if "DATA" in df_csv.columns:
+                df_csv["DATA"] = pd.to_datetime(df_csv["DATA"], errors="coerce", dayfirst=True)
+                df_csv = df_csv.dropna(subset=["DATA"]).copy()
+            
+                start_period = pd.Period(start_date, freq="M")
+                end_period = pd.Period(end_date, freq="M")
+            
+                df_csv["MES_ANO"] = df_csv["DATA"].dt.to_period("M")
+                df_csv = df_csv[
+                    (df_csv["MES_ANO"] >= start_period) &
+                    (df_csv["MES_ANO"] <= end_period)
+                ].copy()
+            
+                df_csv["MES_ANO"] = df_csv["MES_ANO"].astype(str)
+
             if tipo_dado == "Dados por Estado" and selected_uf and "UF" in df_csv.columns:
                 df_csv = df_csv[df_csv["UF"].astype(str) == str(selected_uf)]
 
@@ -873,36 +920,37 @@ if st.session_state.aplicar:
 
             elif (
                 tipo_dado == "Dados Empresa/Fazenda"
-                and selected_empresa
-                and selected_fazenda
+                and selected_empresa and selected_fazenda
                 and all(c in df_csv.columns for c in ["EMPRESA", "FAZENDA"])
             ):
                 df_csv = df_csv[
-                    (df_csv["EMPRESA"].astype(str) == str(selected_empresa))
-                    & (df_csv["FAZENDA"].astype(str) == str(selected_fazenda))
+                    (df_csv["EMPRESA"].astype(str) == str(selected_empresa)) &
+                    (df_csv["FAZENDA"].astype(str) == str(selected_fazenda))
                 ]
 
             elif (
                 tipo_dado == "Dados por Município"
-                and selected_uf
-                and selected_municipio
+                and selected_uf and selected_municipio
                 and all(c in df_csv.columns for c in ["UF", "MUNICIPIO"])
             ):
                 df_csv = df_csv[
-                    (df_csv["UF"].astype(str) == str(selected_uf))
-                    & (df_csv["MUNICIPIO"].astype(str) == str(selected_municipio))
+                    (df_csv["UF"].astype(str) == str(selected_uf)) &
+                    (df_csv["MUNICIPIO"].astype(str) == str(selected_municipio))
                 ]
 
-            logger.info(f"Após filtro de modo: {len(df_csv)} registros")
-            log_container.success(f"🔎 Após filtros: {len(df_csv)} registros")
+            log_container.info(f"📦 Total final: {len(df_csv)} registros")
+        else:
+            df_csv = pd.DataFrame()
+            log_container.warning("⚠️ Nenhum registro carregado.")
 
-                        # 🔥 OTIMIZAÇÃO DE MEMÓRIA (INSERIR AQUI)
-            if not df_csv.empty:
-                if "EMPRESA" in df_csv.columns:
-                    df_csv["EMPRESA"] = df_csv["EMPRESA"].astype("category")
-            
-                if "FAZENDA" in df_csv.columns:
-                    df_csv["FAZENDA"] = df_csv["FAZENDA"].astype("category")
+    except Exception as e:
+        logger.error(f"Erro no carregamento dos CSVs: {e}")
+        log_container.error(f"❌ Erro geral no carregamento: {e}")
+
+
+
+
+
 # =====================================================================
 # ABAS
 # =====================================================================
@@ -911,14 +959,12 @@ tab1, tab2, tab3, tab4 = st.tabs(["🗺️ Mapa Principal", "📋 Dados Shape", 
 # ===== ABA 1: MAPA =====
 
 
-# ===== ABA 1: MAPA PRINCIPAL (CARREGA GEO COMPLETO + CONTROLE VIA MAPA) =====
+# ===== ABA 1: MAPA PRINCIPAL (REESCRITA COM MELHORIAS) =====
 with tab1:
     st.markdown('<div class="section-title">Mapa Principal</div>', unsafe_allow_html=True)
 
     # ----------------------------------------------------
-    # 1) Define qual GEO mostrar
-    #    - Ao iniciar: mostra TODO o shapefile
-    #    - Após aplicar filtros: mostra filtrado
+    # 1) Contexto e resumo rápido
     # ----------------------------------------------------
     if st.session_state.get("aplicar", False):
         gdf_map = gdf_filtered
@@ -931,26 +977,103 @@ with tab1:
         st.info("Nenhuma geometria disponível para exibição no mapa.")
         st.stop()
 
-    # ----------------------------------------------------
-    # 2) Criar mapa sem tile inicial
-    # ----------------------------------------------------
-    m = folium.Map(tiles=None)
+    area_total_mapa = np.nan
+    area_produ_mapa = np.nan
+    n_empresas = 0
+    n_fazendas = 0
+    n_municipios = 0
+    n_feicoes = len(gdf_map)
 
-    bounds = gdf_map.total_bounds
+    try:
+        if "AREA_T" in gdf_map.columns:
+            area_total_mapa = float(pd.to_numeric(gdf_map["AREA_T"], errors="coerce").sum(skipna=True))
+
+        if "AREA_PRODU" in gdf_map.columns:
+            area_produ_mapa = float(pd.to_numeric(gdf_map["AREA_PRODU"], errors="coerce").sum(skipna=True))
+
+        if "EMPRESA" in gdf_map.columns:
+            n_empresas = int(gdf_map["EMPRESA"].dropna().astype(str).nunique())
+
+        if "FAZENDA" in gdf_map.columns:
+            n_fazendas = int(gdf_map["FAZENDA"].dropna().astype(str).nunique())
+
+        if "MUNICIPIO" in gdf_map.columns:
+            n_municipios = int(gdf_map["MUNICIPIO"].dropna().astype(str).nunique())
+    except Exception:
+        pass
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        st.metric("Fazendas", str(n_fazendas))
+    with c2:
+        st.metric("Área total (ha)", f"{area_total_mapa:.1f}" if pd.notna(area_total_mapa) else "N/A")
+    with c3:
+        st.metric("Área produtiva (ha)", f"{area_produ_mapa:.1f}" if pd.notna(area_produ_mapa) else "N/A")
+    with c4:
+        st.metric("Municípios", str(n_municipios))
+    with c5:
+        st.metric("Feições", f"{n_feicoes:,}".replace(",", "."))
+
+    def descricao_filtro_mapa():
+        if tipo_dado == "Dados por Estado":
+            return f"Estado: {selected_uf}" if selected_uf else "Estado"
+        elif tipo_dado == "Dados por Empresa":
+            return f"Empresa: {selected_empresa}" if selected_empresa else "Empresa"
+        elif tipo_dado == "Dados Empresa/Fazenda":
+            if selected_empresa and selected_fazenda:
+                return f"Empresa/Fazenda: {selected_empresa} / {selected_fazenda}"
+            elif selected_empresa:
+                return f"Empresa: {selected_empresa}"
+            return "Empresa/Fazenda"
+        elif tipo_dado == "Dados por Município":
+            if selected_uf and selected_municipio:
+                return f"Município: {selected_municipio} / {selected_uf}"
+            elif selected_municipio:
+                return f"Município: {selected_municipio}"
+            return "Município"
+        return "Todos os Dados"
+
+    st.caption(
+        f"Camada exibida: {tipo_exib} | Filtro: {descricao_filtro_mapa()} | "
+        f"Empresas: {n_empresas} | Fazendas: {n_fazendas}"
+    )
+
+    # ----------------------------------------------------
+    # 2) Preparação dos campos para exibição
+    # ----------------------------------------------------
+    gdf_map_display = gdf_map.copy()
+
+    for col in ["AREA_T", "AREA_PRODU"]:
+        if col in gdf_map_display.columns:
+            gdf_map_display[col] = pd.to_numeric(gdf_map_display[col], errors="coerce").round(1)
+
+    if "AREA_T" in gdf_map_display.columns:
+        gdf_map_display["AREA_T_TXT"] = gdf_map_display["AREA_T"].apply(
+            lambda x: f"{x:.1f} ha" if pd.notna(x) else "N/A"
+        )
+
+    if "AREA_PRODU" in gdf_map_display.columns:
+        gdf_map_display["AREA_PRODU_TXT"] = gdf_map_display["AREA_PRODU"].apply(
+            lambda x: f"{x:.1f} ha" if pd.notna(x) else "N/A"
+        )
+
+    # ----------------------------------------------------
+    # 3) Criar mapa base
+    # ----------------------------------------------------
+    m = folium.Map(tiles=None, control_scale=True)
+
+    bounds = gdf_map_display.total_bounds
     m.fit_bounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]])
 
     # ----------------------------------------------------
-    # 3) Camadas Base (controle via LayerControl)
+    # 4) Camadas base
     # ----------------------------------------------------
-
-    # OpenStreetMap
     folium.TileLayer(
         "OpenStreetMap",
         name="OpenStreetMap",
         show=True,
     ).add_to(m)
 
-    # Esri World Imagery
     folium.TileLayer(
         tiles="https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attr="Esri",
@@ -958,7 +1081,6 @@ with tab1:
         show=False,
     ).add_to(m)
 
-    # Google Satélite
     folium.TileLayer(
         tiles="https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
         attr="Google",
@@ -967,7 +1089,6 @@ with tab1:
         show=False,
     ).add_to(m)
 
-    # Google Híbrido
     folium.TileLayer(
         tiles="https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
         attr="Google",
@@ -977,54 +1098,132 @@ with tab1:
     ).add_to(m)
 
     # ----------------------------------------------------
-    # 4) Camada do Shape
+    # 5) Estilo da camada
     # ----------------------------------------------------
     color_map = {
         "Todos os Dados": "#DFF500",
         "Dados por Estado": "#F500B4",
         "Dados por Empresa": "#00C4F5",
-        "Dados Empresa/Fazenda": "red",
+        "Dados Empresa/Fazenda": "#FF3B30",
         "Dados por Município": "#F5C400",
     }
-    color = color_map.get(tipo_exib, "blue")
+    color = color_map.get(tipo_exib, "#3388ff")
 
-    fields = [c for c in ["UF", "MUNICIPIO", "EMPRESA", "FAZENDA"] if c in gdf_map.columns]
-    aliases_map = {
+    # ----------------------------------------------------
+    # 6) Tooltip e popup profissionais
+    # ----------------------------------------------------
+    tooltip_fields = [
+        c for c in [
+            "UF",
+            "MUNICIPIO",
+            "EMPRESA",
+            "FAZENDA",
+            "AREA_T_TXT",
+            "AREA_PRODU_TXT",
+        ]
+        if c in gdf_map_display.columns
+    ]
+
+    tooltip_aliases_map = {
         "UF": "UF",
         "MUNICIPIO": "Município",
         "EMPRESA": "Empresa",
         "FAZENDA": "Fazenda",
+        "AREA_T_TXT": "Área Total",
+        "AREA_PRODU_TXT": "Área Produtiva",
     }
-    aliases = [aliases_map.get(c, c) for c in fields]
+    tooltip_aliases = [tooltip_aliases_map.get(c, c) for c in tooltip_fields]
 
+    popup_fields = tooltip_fields
+    popup_aliases = tooltip_aliases
+
+    # ----------------------------------------------------
+    # 7) GeoJson principal com destaque ao passar o mouse
+    # ----------------------------------------------------
     folium.GeoJson(
-        gdf_map.to_json(),
+        gdf_map_display.to_json(),
         name="Áreas (Shape)",
         style_function=lambda x: {
             "fillColor": color,
             "color": color,
-            "weight": 1,
-            "fillOpacity": 0.55,
+            "weight": 1.2,
+            "fillOpacity": 0.40,
+        },
+        highlight_function=lambda x: {
+            "fillColor": color,
+            "color": "#000000",
+            "weight": 2.4,
+            "fillOpacity": 0.65,
         },
         tooltip=folium.features.GeoJsonTooltip(
-            fields=fields,
-            aliases=aliases,
-            sticky=False,
+            fields=tooltip_fields,
+            aliases=tooltip_aliases,
+            sticky=True,
+            labels=True,
+            localize=True,
+            style=(
+                "background-color: white; "
+                "color: #222; "
+                "font-family: Arial; "
+                "font-size: 12px; "
+                "padding: 8px; "
+                "border: 1px solid #999; "
+                "border-radius: 4px; "
+                "box-shadow: 2px 2px 6px rgba(0,0,0,0.15);"
+            ),
+        ),
+        popup=folium.features.GeoJsonPopup(
+            fields=popup_fields,
+            aliases=popup_aliases,
+            localize=True,
+            labels=True,
+            style="background-color: white;",
         ),
     ).add_to(m)
 
     # ----------------------------------------------------
-    # 5) Controle de Camadas (único método de seleção)
+    # 8) Legenda visual simples
+    # ----------------------------------------------------
+    legenda_html = f"""
+    <div style="
+        position: fixed;
+        bottom: 30px;
+        left: 30px;
+        z-index: 9999;
+        background-color: white;
+        border: 1px solid rgba(0,0,0,0.25);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 12px;
+        box-shadow: 2px 2px 8px rgba(0,0,0,0.15);
+    ">
+        <div style="font-weight: 700; margin-bottom: 6px;">Legenda</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+            <span style="
+                display:inline-block;
+                width:16px;
+                height:16px;
+                background:{color};
+                border:1px solid #444;
+            "></span>
+            <span>{tipo_exib}</span>
+        </div>
+    </div>
+    """
+    m.get_root().html.add_child(folium.Element(legenda_html))
+
+    # ----------------------------------------------------
+    # 9) Controle de camadas
     # ----------------------------------------------------
     folium.LayerControl(collapsed=False).add_to(m)
 
     # ----------------------------------------------------
-    # 6) Renderização
+    # 10) Exibição
     # ----------------------------------------------------
     st_folium(
         m,
         width=1400,
-        height=600,
+        height=620,
         key="mapa_principal",
         returned_objects=[],
     )
@@ -1033,8 +1232,8 @@ with tab1:
 
 
 
-
 # ===== ABA 2: DADOS SHAPE (ORDENADA + REMOÇÃO LOCAL_PROJ + EXCEL) =====
+# ===== ABA 2: DADOS SHAPE (5 PRIMEIRAS LINHAS + BOTÃO EXIBIR TUDO) =====
 with tab2:
     st.markdown('<div class="section-title">Dados Shape</div>', unsafe_allow_html=True)
 
@@ -1053,7 +1252,6 @@ with tab2:
     df_shape = df_shape.drop(columns=["geometry"], errors="ignore")
     df_shape.columns = [str(c).strip() for c in df_shape.columns]
 
-    # Corrige possíveis variações/typos
     aliases = {
         "AREA_PORDUT": "AREA_PRODU",
         "AREA_PRODUT": "AREA_PRODU",
@@ -1074,7 +1272,7 @@ with tab2:
             df_shape[col_area] = pd.to_numeric(df_shape[col_area], errors="coerce").round(1)
 
     # ----------------------------------------------------
-    # 4) Reordenar colunas conforme solicitado
+    # 4) Reordenar colunas
     # ----------------------------------------------------
     ordem_prioritaria = [
         "UF",
@@ -1089,7 +1287,6 @@ with tab2:
 
     colunas_existentes = [c for c in ordem_prioritaria if c in df_shape.columns]
     outras_colunas = [c for c in df_shape.columns if c not in colunas_existentes]
-
     df_shape = df_shape[colunas_existentes + outras_colunas]
 
     # ----------------------------------------------------
@@ -1113,20 +1310,30 @@ with tab2:
     )
 
     # ----------------------------------------------------
-    # 6) Exibição
+    # 6) Exibição parcial / completa
     # ----------------------------------------------------
-    st.dataframe(df_shape, width="stretch", height=520)
-    st.caption(f"Total de registros: {len(df_shape)}")
-    st.caption(f"Colunas: {list(df_shape.columns)}")
+    if "mostrar_tudo_shape" not in st.session_state:
+        st.session_state["mostrar_tudo_shape"] = False
+
+    st.info("Foram exibidas somente as 5 primeiras linhas da tabela.")
+
+    if st.button("Exibir tudo", key="btn_exibir_tudo_shape"):
+        st.session_state["mostrar_tudo_shape"] = True
+
+    if st.session_state["mostrar_tudo_shape"]:
+        st.dataframe(df_shape, use_container_width=True, height=520)
+        st.caption(f"Total de registros: {len(df_shape)}")
+    else:
+        st.dataframe(df_shape.head(5), use_container_width=True, height=220)
+        st.caption(f"Mostrando 5 de {len(df_shape)} registros.")
 
 
 
 
 
-
-# ===== ABA 3: DADOS DE CLIMA (AJUSTADA: DATA DD-MM-AAAA + ANO + MÊS + ÁREAS 1 DECIMAL + EXPORT EXCEL) =====
 
 # ===== ABA 3: DADOS DE CLIMA (ORDEM ESPECÍFICA + EXCEL) =====
+# ===== ABA 3: DADOS DE CLIMA (5 PRIMEIRAS LINHAS + BOTÃO EXIBIR TUDO) =====
 with tab3:
     st.markdown('<div class="section-title">Dados de Clima</div>', unsafe_allow_html=True)
 
@@ -1138,9 +1345,6 @@ with tab3:
         st.warning("Nenhum dado de clima filtrado.")
         st.stop()
 
-    # ----------------------------------------------------
-    # 1) Preparação
-    # ----------------------------------------------------
     dfc = df_csv.copy()
     dfc.columns = [str(c).strip() for c in dfc.columns]
 
@@ -1157,11 +1361,11 @@ with tab3:
         st.error("❌ Coluna DATA não encontrada.")
         st.stop()
 
-    dfc["DATA"] = pd.to_datetime(dfc["DATA"], errors="coerce")
+    dfc["DATA"] = pd.to_datetime(dfc["DATA"], errors="coerce", dayfirst=True)
     dfc = dfc.dropna(subset=["DATA"]).copy()
 
     # ----------------------------------------------------
-    # 2) ANO e MÊS (PT-BR)
+    # ANO e MÊS
     # ----------------------------------------------------
     meses_pt = {
         1: "Jan", 2: "Fev", 3: "Mar", 4: "Abr", 5: "Mai", 6: "Jun",
@@ -1175,14 +1379,14 @@ with tab3:
     dfc["DATA"] = dfc["DATA"].dt.strftime("%d-%m-%Y")
 
     # ----------------------------------------------------
-    # 3) AREA_T e AREA_PRODU com 1 casa decimal
+    # Ajuste de áreas
     # ----------------------------------------------------
     for col_area in ["AREA_T", "AREA_PRODU"]:
         if col_area in dfc.columns:
             dfc[col_area] = pd.to_numeric(dfc[col_area], errors="coerce").round(1)
 
     # ----------------------------------------------------
-    # 4) ORDEM EXATA DAS COLUNAS
+    # Ordem das colunas
     # ----------------------------------------------------
     ordem_especifica = [
         "DATA", "ANO", "MES",
@@ -1211,11 +1415,10 @@ with tab3:
 
     colunas_existentes = [c for c in ordem_especifica if c in dfc.columns]
     outras_colunas = [c for c in dfc.columns if c not in colunas_existentes]
-
     dfc = dfc[colunas_existentes + outras_colunas]
 
     # ----------------------------------------------------
-    # 5) Exportar para Excel
+    # Exportar para Excel
     # ----------------------------------------------------
     import io
 
@@ -1235,27 +1438,37 @@ with tab3:
     )
 
     # ----------------------------------------------------
-    # 6) Exibição
+    # Exibição parcial / completa
     # ----------------------------------------------------
-    st.dataframe(dfc, use_container_width="stretch", height=520)
-    st.caption(f"Total de registros: {len(dfc)}")
-    st.caption(f"Colunas: {list(dfc.columns)}")
+    if "mostrar_tudo_clima" not in st.session_state:
+        st.session_state["mostrar_tudo_clima"] = False
+
+    st.info("Foram exibidas somente as 5 primeiras linhas da tabela.")
+
+    if st.button("Exibir tudo", key="btn_exibir_tudo_clima"):
+        st.session_state["mostrar_tudo_clima"] = True
+
+    if st.session_state["mostrar_tudo_clima"]:
+        st.dataframe(dfc, use_container_width=True, height=520)
+        st.caption(f"Total de registros: {len(dfc)}")
+        st.caption(f"Colunas: {list(dfc.columns)}")
+    else:
+        st.dataframe(dfc.head(5), use_container_width=True, height=220)
+        st.caption(f"Mostrando 5 de {len(dfc)} registros.")
+        st.caption(f"Colunas: {list(dfc.columns)}")
 
 
 
 
 
+# ===== ABA 4: ANÁLISE AVANÇADA (COMPLETA:# ===== ABA 4: ANÁLISE AVANÇADA (REESCRITA) =====
 
-
-
-
-
-# ===== ABA 4: ANÁLISE AVANÇADA (COMPLETA: ANO/MÊS + EXCEL + ÁREA 1 DECIMAL + GRÁFICOS EM BARRAS) =====
+# ===== ABA 4: ANÁLISE AVANÇADA (ORDEM AJUSTADA) =====
 with tab4:
     st.markdown('<div class="section-title">Análise Avançada</div>', unsafe_allow_html=True)
 
     # ----------------------------------------------------
-    # 1) Guard-rails
+    # 1) Validações iniciais
     # ----------------------------------------------------
     if not st.session_state.get("aplicar", False):
         st.info("Clique em **'✅ Aplicar Filtros'** na sidebar para ver a análise.")
@@ -1266,38 +1479,23 @@ with tab4:
         st.info("Verifique se os dados foram carregados corretamente na aba **'Dados de Clima'**.")
         st.stop()
 
-    # ----------------------------------------------------
-    # 2) Contexto
-    # ----------------------------------------------------
     st.success(f"✅ Analisando {len(df_csv)} registros no período selecionado.")
 
-    with st.expander("ℹ️ Contexto do filtro aplicado", expanded=False):
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Tipo de dado", tipo_dado)
-        c2.metric("Data inicial", str(start_date))
-        c3.metric("Data final", str(end_date))
-        c4.metric("Registros", str(len(df_csv)))
-
-        f1, f2, f3, f4 = st.columns(4)
-        f1.write(f"**UF:** {selected_uf if selected_uf else '—'}")
-        f2.write(f"**Município:** {selected_municipio if selected_municipio else '—'}")
-        f3.write(f"**Empresa:** {selected_empresa if selected_empresa else '—'}")
-        f4.write(f"**Fazenda:** {selected_fazenda if selected_fazenda else '—'}")
-
     # ----------------------------------------------------
-    # 3) Normalização + Conversão numérica BR
+    # 2) Preparação e normalização
     # ----------------------------------------------------
-    df_work = df_csv
-    
-
-    
+    df_work = df_csv.copy()
     df_work.columns = [str(c).strip() for c in df_work.columns]
 
     aliases = {
-        "Data": "DATA", "data": "DATA",
-        "Empresa": "EMPRESA", "Fazenda": "FAZENDA",
-        "Município": "MUNICIPIO", "Municipio": "MUNICIPIO",
-        "PRECIP": "PRECIP_CHIRPS_MM", "PRECIP_MM": "PRECIP_CHIRPS_MM",
+        "Data": "DATA",
+        "data": "DATA",
+        "Empresa": "EMPRESA",
+        "Fazenda": "FAZENDA",
+        "Município": "MUNICIPIO",
+        "Municipio": "MUNICIPIO",
+        "PRECIP": "PRECIP_CHIRPS_MM",
+        "PRECIP_MM": "PRECIP_CHIRPS_MM",
         "TEMP_MEDIA": "TEMP_MEDIA_C",
         "UMID_MEDIA": "UMID_MEDIA_PCT",
         "AREA_PORDUT": "AREA_PRODU",
@@ -1315,28 +1513,31 @@ with tab4:
         has_comma = x.str.contains(r",", na=False)
         both = has_dot & has_comma
 
-        # 1.234,56 -> 1234.56
         x.loc[both] = x.loc[both].str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
 
-        # 123,45 -> 123.45
         only_comma = has_comma & ~has_dot
         x.loc[only_comma] = x.loc[only_comma].str.replace(",", ".", regex=False)
 
         return pd.to_numeric(x, errors="coerce")
 
-    # DATA
-    if "DATA" in df_work.columns:
-        df_work["DATA"] = pd.to_datetime(df_work["DATA"], errors="coerce")
-        df_work = df_work.dropna(subset=["DATA"]).copy()
-    else:
+    if "DATA" not in df_work.columns:
         st.error("❌ Coluna DATA não encontrada no CSV.")
         st.stop()
 
-    # Converter colunas numéricas relevantes (se existirem)
+    df_work["DATA"] = pd.to_datetime(
+        df_work["DATA"].astype(str).str.strip(),
+        errors="coerce",
+        dayfirst=True
+    )
+    df_work = df_work.dropna(subset=["DATA"]).copy()
+
     numeric_candidates = [
         "AREA_PRODU",
         "PRECIP_CHIRPS_MM",
-        "TEMP_MEDIA_C", "TEMP_MIN_C", "TEMP_MAX_C", "AMPLITUDE_TERMICA_C",
+        "TEMP_MEDIA_C",
+        "TEMP_MIN_C",
+        "TEMP_MAX_C",
+        "AMPLITUDE_TERMICA_C",
         "UMID_MEDIA_PCT",
         "DIAS_SEM_CHUVA",
     ]
@@ -1344,20 +1545,25 @@ with tab4:
         if c in df_work.columns:
             df_work[c] = coerce_numeric_br(df_work[c])
 
-    # Diagnóstico rápido
-    with st.expander("🧪 Diagnóstico rápido — valores válidos", expanded=False):
-        cols_check = ["AREA_PRODU", "PRECIP_CHIRPS_MM", "TEMP_MEDIA_C", "UMID_MEDIA_PCT", "DIAS_SEM_CHUVA"]
-        info = {}
-        for c in cols_check:
-            if c in df_work.columns:
-                info[c] = f"{int(df_work[c].notna().sum())} / {len(df_work)}"
-        st.write(info if info else "Nenhuma coluna esperada foi encontrada.")
-        st.write("Colunas disponíveis:", list(df_work.columns))
+    meses_pt = {
+        1: "Jan", 2: "Fev", 3: "Mar", 4: "Abr", 5: "Mai", 6: "Jun",
+        7: "Jul", 8: "Ago", 9: "Set", 10: "Out", 11: "Nov", 12: "Dez"
+    }
 
-    # ----------------------------------------------------
-    # 4) Funções auxiliares (ponderação + export excel)
-    # ----------------------------------------------------
-    def wmean(values: pd.Series, weights: pd.Series) -> float:
+    df_work["ANO"] = df_work["DATA"].dt.year
+    df_work["MES_NUM"] = df_work["DATA"].dt.month
+    df_work["MES"] = df_work["MES_NUM"].map(meses_pt)
+    df_work["MES_ANO"] = df_work["DATA"].dt.strftime("%Y-%m")
+
+    import io
+
+    def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Resumo") -> bytes:
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+        return output.getvalue()
+
+    def weighted_mean(values: pd.Series, weights: pd.Series) -> float:
         v = pd.to_numeric(values, errors="coerce")
         w = pd.to_numeric(weights, errors="coerce")
         m = v.notna() & w.notna() & (w > 0)
@@ -1365,179 +1571,523 @@ with tab4:
             return float("nan")
         return float((v[m] * w[m]).sum() / w[m].sum())
 
-    def wmean_col(g: pd.DataFrame, value_col: str, weight_col: str = "AREA_PRODU") -> float:
-        if value_col not in g.columns or weight_col not in g.columns:
-            return float("nan")
-        return wmean(g[value_col], g[weight_col])
+    def area_por_fazenda(g: pd.DataFrame) -> pd.Series:
+        if not all(c in g.columns for c in ["FAZENDA", "AREA_PRODU"]):
+            return pd.Series(dtype=float)
+        tmp = g[["FAZENDA", "AREA_PRODU"]].copy()
+        tmp["AREA_PRODU"] = pd.to_numeric(tmp["AREA_PRODU"], errors="coerce")
+        return tmp.groupby("FAZENDA", dropna=False)["AREA_PRODU"].first()
 
-    import io
+    def descricao_filtro():
+        if tipo_dado == "Dados por Estado":
+            return f"Estado: {selected_uf}" if selected_uf else "Estado"
+        elif tipo_dado == "Dados por Empresa":
+            return f"Empresa: {selected_empresa}" if selected_empresa else "Empresa"
+        elif tipo_dado == "Dados Empresa/Fazenda":
+            if selected_empresa and selected_fazenda:
+                return f"Empresa/Fazenda: {selected_empresa} / {selected_fazenda}"
+            elif selected_empresa:
+                return f"Empresa: {selected_empresa}"
+            return "Empresa/Fazenda"
+        elif tipo_dado == "Dados por Município":
+            if selected_uf and selected_municipio:
+                return f"Município: {selected_municipio} / {selected_uf}"
+            elif selected_municipio:
+                return f"Município: {selected_municipio}"
+            return "Município"
+        return "Todos os Dados"
 
-    def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Resumo_AnoMes") -> bytes:
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
-        return output.getvalue()
+    filtro_desc = descricao_filtro()
+    periodo_desc = f"{start_date.strftime('%m/%Y')} a {end_date.strftime('%m/%Y')}"
+
+    def resumo_mensal_from_df(df: pd.DataFrame) -> pd.DataFrame:
+        rows = []
+
+        for (mes_ano, ano, mes_num, mes), g in df.groupby(["MES_ANO", "ANO", "MES_NUM", "MES"], dropna=False):
+            row = {
+                "MES_ANO": mes_ano,
+                "ANO": int(ano) if pd.notna(ano) else np.nan,
+                "MES_NUM": int(mes_num) if pd.notna(mes_num) else np.nan,
+                "MES": mes,
+            }
+
+            areas = area_por_fazenda(g)
+            areas_valid = pd.to_numeric(areas, errors="coerce").dropna()
+            areas_valid = areas_valid[areas_valid > 0]
+
+            row["AREA_PRODU"] = float(areas_valid.sum()) if not areas_valid.empty else np.nan
+
+            if "PRECIP_CHIRPS_MM" in g.columns:
+                precip = pd.to_numeric(g["PRECIP_CHIRPS_MM"], errors="coerce")
+                row["Precipitação Total (mm)"] = float(precip.sum(skipna=True)) if precip.notna().any() else np.nan
+                row["Precipitação Média Ponderada (mm)"] = weighted_mean(g["PRECIP_CHIRPS_MM"], g["AREA_PRODU"])
+                row["Precipitação Máxima (mm)"] = float(precip.max(skipna=True)) if precip.notna().any() else np.nan
+                row["Precipitação Mínima (mm)"] = float(precip.min(skipna=True)) if precip.notna().any() else np.nan
+
+            if "TEMP_MEDIA_C" in g.columns:
+                row["Média Temp Ponderada (°C)"] = weighted_mean(g["TEMP_MEDIA_C"], g["AREA_PRODU"])
+
+            if "TEMP_MIN_C" in g.columns:
+                temp_min = pd.to_numeric(g["TEMP_MIN_C"], errors="coerce")
+                row["Temp Mínima (°C)"] = float(temp_min.min(skipna=True)) if temp_min.notna().any() else np.nan
+
+            if "TEMP_MAX_C" in g.columns:
+                temp_max = pd.to_numeric(g["TEMP_MAX_C"], errors="coerce")
+                row["Temp Máxima (°C)"] = float(temp_max.max(skipna=True)) if temp_max.notna().any() else np.nan
+
+            if "AMPLITUDE_TERMICA_C" in g.columns:
+                row["Amplitude Térmica Ponderada (°C)"] = weighted_mean(g["AMPLITUDE_TERMICA_C"], g["AREA_PRODU"])
+
+            if "UMID_MEDIA_PCT" in g.columns:
+                row["Umidade Média Ponderada (%)"] = weighted_mean(g["UMID_MEDIA_PCT"], g["AREA_PRODU"])
+
+            if "DIAS_SEM_CHUVA" in g.columns:
+                dias_sem = pd.to_numeric(g["DIAS_SEM_CHUVA"], errors="coerce")
+                row["Dias sem Chuva"] = float(dias_sem.max(skipna=True)) if dias_sem.notna().any() else np.nan
+
+            rows.append(row)
+
+        out = pd.DataFrame(rows)
+
+        if not out.empty:
+            out["DATA_ORDENACAO"] = pd.to_datetime(out["MES_ANO"] + "-01", errors="coerce")
+            out = out.sort_values("DATA_ORDENACAO").copy()
+
+            if "AREA_PRODU" in out.columns:
+                out["AREA_PRODU"] = pd.to_numeric(out["AREA_PRODU"], errors="coerce").round(1)
+
+            for c in [
+                "Precipitação Total (mm)",
+                "Precipitação Média Ponderada (mm)",
+                "Precipitação Máxima (mm)",
+                "Precipitação Mínima (mm)",
+                "Média Temp Ponderada (°C)",
+                "Temp Mínima (°C)",
+                "Temp Máxima (°C)",
+                "Amplitude Térmica Ponderada (°C)",
+                "Umidade Média Ponderada (%)",
+                "Dias sem Chuva",
+            ]:
+                if c in out.columns:
+                    out[c] = pd.to_numeric(out[c], errors="coerce").round(2)
+
+        return out
+
+    def resumo_anual_from_resumo_mensal(resumo_mes: pd.DataFrame) -> pd.DataFrame:
+        if resumo_mes is None or resumo_mes.empty:
+            return pd.DataFrame()
+
+        rows = []
+
+        for ano, g in resumo_mes.groupby("ANO", dropna=False):
+            row = {"ANO": int(ano) if pd.notna(ano) else np.nan}
+
+            if "AREA_PRODU" in g.columns:
+                area = pd.to_numeric(g["AREA_PRODU"], errors="coerce")
+                row["AREA_PRODU"] = float(area.mean(skipna=True)) if area.notna().any() else np.nan
+
+            if "Precipitação Média Ponderada (mm)" in g.columns:
+                precip_media_pond_mes = pd.to_numeric(g["Precipitação Média Ponderada (mm)"], errors="coerce")
+                row["Precipitação Total (mm)"] = (
+                    float(precip_media_pond_mes.sum(skipna=True))
+                    if precip_media_pond_mes.notna().any() else np.nan
+                )
+
+            if all(c in g.columns for c in ["Precipitação Média Ponderada (mm)", "AREA_PRODU"]):
+                row["Precipitação Média Ponderada (mm)"] = weighted_mean(
+                    g["Precipitação Média Ponderada (mm)"],
+                    g["AREA_PRODU"]
+                )
+
+            if "Precipitação Máxima (mm)" in g.columns:
+                precip_max = pd.to_numeric(g["Precipitação Máxima (mm)"], errors="coerce")
+                row["Precipitação Máxima (mm)"] = float(precip_max.max(skipna=True)) if precip_max.notna().any() else np.nan
+
+            if "Precipitação Mínima (mm)" in g.columns:
+                precip_min = pd.to_numeric(g["Precipitação Mínima (mm)"], errors="coerce")
+                row["Precipitação Mínima (mm)"] = float(precip_min.min(skipna=True)) if precip_min.notna().any() else np.nan
+
+            if all(c in g.columns for c in ["Média Temp Ponderada (°C)", "AREA_PRODU"]):
+                row["Média Temp Ponderada (°C)"] = weighted_mean(
+                    g["Média Temp Ponderada (°C)"],
+                    g["AREA_PRODU"]
+                )
+
+            if "Temp Mínima (°C)" in g.columns:
+                temp_min = pd.to_numeric(g["Temp Mínima (°C)"], errors="coerce")
+                row["Temp Mínima (°C)"] = float(temp_min.min(skipna=True)) if temp_min.notna().any() else np.nan
+
+            if "Temp Máxima (°C)" in g.columns:
+                temp_max = pd.to_numeric(g["Temp Máxima (°C)"], errors="coerce")
+                row["Temp Máxima (°C)"] = float(temp_max.max(skipna=True)) if temp_max.notna().any() else np.nan
+
+            if all(c in g.columns for c in ["Amplitude Térmica Ponderada (°C)", "AREA_PRODU"]):
+                row["Amplitude Térmica Ponderada (°C)"] = weighted_mean(
+                    g["Amplitude Térmica Ponderada (°C)"],
+                    g["AREA_PRODU"]
+                )
+
+            if all(c in g.columns for c in ["Umidade Média Ponderada (%)", "AREA_PRODU"]):
+                row["Umidade Média Ponderada (%)"] = weighted_mean(
+                    g["Umidade Média Ponderada (%)"],
+                    g["AREA_PRODU"]
+                )
+
+            if "Dias sem Chuva" in g.columns:
+                dias_sem = pd.to_numeric(g["Dias sem Chuva"], errors="coerce")
+                row["Dias sem Chuva"] = float(dias_sem.max(skipna=True)) if dias_sem.notna().any() else np.nan
+
+            rows.append(row)
+
+        out = pd.DataFrame(rows)
+
+        if not out.empty:
+            if "AREA_PRODU" in out.columns:
+                out["AREA_PRODU"] = pd.to_numeric(out["AREA_PRODU"], errors="coerce").round(1)
+
+            for c in [
+                "Precipitação Total (mm)",
+                "Precipitação Média Ponderada (mm)",
+                "Precipitação Máxima (mm)",
+                "Precipitação Mínima (mm)",
+                "Média Temp Ponderada (°C)",
+                "Temp Mínima (°C)",
+                "Temp Máxima (°C)",
+                "Amplitude Térmica Ponderada (°C)",
+                "Umidade Média Ponderada (%)",
+                "Dias sem Chuva",
+            ]:
+                if c in out.columns:
+                    out[c] = pd.to_numeric(out[c], errors="coerce").round(2)
+
+            out = out.sort_values("ANO").copy()
+
+        return out
+
+    resumo_mes = resumo_mensal_from_df(df_work)
+    resumo_ano = resumo_anual_from_resumo_mensal(resumo_mes)
 
     # ----------------------------------------------------
-    # 5) Painel de Métricas (apenas Precip WP com 2 casas)
+    # 3) Resumo Executivo
     # ----------------------------------------------------
+    st.markdown("---")
+    st.markdown('<div class="section-title">Resumo Executivo</div>', unsafe_allow_html=True)
+    st.caption(f"Filtro: {filtro_desc} | Período: {periodo_desc}")
+
+    area_total_resumo = np.nan
+    num_fazendas_resumo = 0
+    num_empresas_resumo = 0
+    num_registros_resumo = len(df_work)
+
+    try:
+        if "AREA_PRODU" in df_work.columns and "FAZENDA" in df_work.columns:
+            area_total_resumo = float(
+                df_work.groupby("FAZENDA", dropna=False)["AREA_PRODU"].first().sum(skipna=True)
+            )
+
+        if "FAZENDA" in df_work.columns:
+            num_fazendas_resumo = int(df_work["FAZENDA"].dropna().nunique())
+
+        if "EMPRESA" in df_work.columns:
+            num_empresas_resumo = int(df_work["EMPRESA"].dropna().nunique())
+    except Exception:
+        pass
+
+    r1, r2, r3, r4 = st.columns(4)
+    with r1:
+        st.metric("Área analisada (ha)", f"{area_total_resumo:.1f}" if pd.notna(area_total_resumo) else "N/A")
+    with r2:
+        st.metric("Fazendas", str(num_fazendas_resumo))
+    with r3:
+        st.metric("Empresas", str(num_empresas_resumo))
+    with r4:
+        st.metric("Registros", f"{num_registros_resumo:,}".replace(",", "."))
+
+    # ----------------------------------------------------
+    # 4) Painel de Métricas
+    # ----------------------------------------------------
+    st.markdown("---")
     st.markdown('<div class="section-title">Painel de Métricas</div>', unsafe_allow_html=True)
+    st.caption(f"Filtro: {filtro_desc} | Período: {periodo_desc}")
 
-    precip_wp = np.nan
-    if all(c in df_work.columns for c in ["FAZENDA", "AREA_PRODU", "PRECIP_CHIRPS_MM"]):
-        areas = df_work.groupby("FAZENDA")["AREA_PRODU"].first()
-        p_sum = df_work.groupby("FAZENDA")["PRECIP_CHIRPS_MM"].sum(min_count=1)
-        tmp = pd.concat([areas.rename("A"), p_sum.rename("P")], axis=1).dropna()
-        tmp = tmp[tmp["A"] > 0]
-        if not tmp.empty:
-            precip_wp = float((tmp["P"] * tmp["A"]).sum() / tmp["A"].sum())
+    precip_total_periodo = np.nan
+    precip_media_anual = np.nan
+    precip_media_mensal = np.nan
+    precip_maxima = np.nan
 
-    c1, c2, c3 = st.columns(3)
+    if not resumo_ano.empty and "Precipitação Total (mm)" in resumo_ano.columns:
+        serie_total_anual = pd.to_numeric(resumo_ano["Precipitação Total (mm)"], errors="coerce")
+        if serie_total_anual.notna().any():
+            precip_total_periodo = float(serie_total_anual.sum(skipna=True))
+            precip_media_anual = float(serie_total_anual.mean(skipna=True))
+
+    if not resumo_mes.empty and "Precipitação Média Ponderada (mm)" in resumo_mes.columns:
+        serie_media_pond_mensal = pd.to_numeric(resumo_mes["Precipitação Média Ponderada (mm)"], errors="coerce")
+        if serie_media_pond_mensal.notna().any():
+            precip_maxima = float(serie_media_pond_mensal.max(skipna=True))
+
+    if not resumo_mes.empty and all(c in resumo_mes.columns for c in ["Precipitação Média Ponderada (mm)", "AREA_PRODU"]):
+        precip_media_mensal = weighted_mean(
+            resumo_mes["Precipitação Média Ponderada (mm)"],
+            resumo_mes["AREA_PRODU"]
+        )
+
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.metric(
-            "Precipitação (média ponderada por AREA_PRODU)",
-            f"{precip_wp:.2f}" if pd.notna(precip_wp) else "N/A",
-        )
+        st.metric("Precipitação Total Ponderada (mm)", f"{precip_total_periodo:.2f}" if pd.notna(precip_total_periodo) else "N/A")
     with c2:
-        st.metric(" ", " ")
+        st.metric("Precipitação Média Anual (mm)", f"{precip_media_anual:.2f}" if pd.notna(precip_media_anual) else "N/A")
     with c3:
-        st.metric(" ", " ")
+        st.metric("Precipitação Média Mensal (mm)", f"{precip_media_mensal:.2f}" if pd.notna(precip_media_mensal) else "N/A")
+    with c4:
+        st.metric("Precipitação Máxima (mm)", f"{precip_maxima:.2f}" if pd.notna(precip_maxima) else "N/A")
 
     # ----------------------------------------------------
-    # 6) TABELA — RESUMO POR ANO/MÊS (precip ponderada por área)
-    # ----------------------------------------------------
-    st.markdown("---")
-    st.markdown('<div class="section-title">Tabela — Resumo por Ano/Mês</div>', unsafe_allow_html=True)
-
-    required_cols = ["DATA", "FAZENDA", "AREA_PRODU", "PRECIP_CHIRPS_MM"]
-    missing_req = [c for c in required_cols if c not in df_work.columns]
-    if missing_req:
-        st.error(f"❌ Não foi possível gerar o resumo por Ano/Mês. Faltando colunas: {missing_req}")
-        st.stop()
-
-    dfm = df_work.copy()
-    dfm["ANO_MES"] = dfm["DATA"].dt.to_period("M").astype(str)
-
-    # Agrega por FAZENDA + ANO_MES (bloco mensal por fazenda)
-    agg_faz_mes = {
-        "AREA_PRODU": "first",
-        "PRECIP_CHIRPS_MM": "sum",
-    }
-    if "TEMP_MEDIA_C" in dfm.columns:
-        agg_faz_mes["TEMP_MEDIA_C"] = "mean"
-    if "AMPLITUDE_TERMICA_C" in dfm.columns:
-        agg_faz_mes["AMPLITUDE_TERMICA_C"] = "mean"
-    if "UMID_MEDIA_PCT" in dfm.columns:
-        agg_faz_mes["UMID_MEDIA_PCT"] = "mean"
-    if "TEMP_MAX_C" in dfm.columns:
-        agg_faz_mes["TEMP_MAX_C"] = "max"
-    if "TEMP_MIN_C" in dfm.columns:
-        agg_faz_mes["TEMP_MIN_C"] = "min"
-    if "DIAS_SEM_CHUVA" in dfm.columns:
-        agg_faz_mes["DIAS_SEM_CHUVA"] = "max"
-
-    faz_mes = (
-        dfm.groupby(["ANO_MES", "FAZENDA"], dropna=False)
-        .agg(agg_faz_mes)
-        .reset_index()
-        .rename(columns={
-            "PRECIP_CHIRPS_MM": "PRECIP_MENSAL",
-            "TEMP_MEDIA_C": "TEMP_MEDIA_MENSAL",
-            "AMPLITUDE_TERMICA_C": "AMP_TERMICA_MENSAL",
-            "UMID_MEDIA_PCT": "UMID_MEDIA_MENSAL",
-            "TEMP_MAX_C": "TEMP_MAX_MENSAL",
-            "TEMP_MIN_C": "TEMP_MIN_MENSAL",
-            "DIAS_SEM_CHUVA": "DIAS_SEM_CHUVA_MAX_MENSAL",
-        })
-    )
-
-    # Segurança de pesos
-    faz_mes["AREA_PRODU"] = pd.to_numeric(faz_mes["AREA_PRODU"], errors="coerce")
-    faz_mes = faz_mes.dropna(subset=["AREA_PRODU"])
-    faz_mes = faz_mes[faz_mes["AREA_PRODU"] > 0].copy()
-
-    # Agrega por ANO_MES (resultado final)
-    out_rows = []
-    for ano_mes, g in faz_mes.groupby("ANO_MES", dropna=False):
-        row = {"Ano/Mês": str(ano_mes)}
-
-        # AREA_PRODU consolidada no mês = soma das áreas (por fazenda)
-        row["AREA_PRODU"] = float(g["AREA_PRODU"].sum(skipna=True))
-
-        # Precipitação: MÉDIA PONDERADA por AREA_PRODU do TOTAL mensal por fazenda
-        row["Precipitação (mm)"] = wmean_col(g, "PRECIP_MENSAL", "AREA_PRODU")
-
-        # Médias mensais (ponderadas por área) das médias por fazenda
-        row["Média Temp (°C)"] = wmean_col(g, "TEMP_MEDIA_MENSAL", "AREA_PRODU") if "TEMP_MEDIA_MENSAL" in g.columns else np.nan
-        row["Média Amplitude Térmica (°C)"] = wmean_col(g, "AMP_TERMICA_MENSAL", "AREA_PRODU") if "AMP_TERMICA_MENSAL" in g.columns else np.nan
-        row["Média Umidade (%)"] = wmean_col(g, "UMID_MEDIA_MENSAL", "AREA_PRODU") if "UMID_MEDIA_MENSAL" in g.columns else np.nan
-
-        # Extremos no mês (entre fazendas)
-        row["Maior Temp (°C)"] = float(pd.to_numeric(g.get("TEMP_MAX_MENSAL"), errors="coerce").max(skipna=True)) if "TEMP_MAX_MENSAL" in g.columns else np.nan
-        row["Menor Temp (°C)"] = float(pd.to_numeric(g.get("TEMP_MIN_MENSAL"), errors="coerce").min(skipna=True)) if "TEMP_MIN_MENSAL" in g.columns else np.nan
-
-        # Máx dias sem chuva no mês (por fazenda) -> pondera por área
-        row["Máx Dias Sem Chuva (média ponderada)"] = wmean_col(g, "DIAS_SEM_CHUVA_MAX_MENSAL", "AREA_PRODU") if "DIAS_SEM_CHUVA_MAX_MENSAL" in g.columns else np.nan
-
-        out_rows.append(row)
-
-    resumo_mes = pd.DataFrame(out_rows)
-
-    # Ordena Ano/Mês
-    resumo_mes["_DT"] = pd.to_datetime(resumo_mes["Ano/Mês"] + "-01", errors="coerce")
-    resumo_mes = resumo_mes.sort_values("_DT").drop(columns=["_DT"])
-
-    # Arredondamentos
-    if "AREA_PRODU" in resumo_mes.columns:
-        resumo_mes["AREA_PRODU"] = pd.to_numeric(resumo_mes["AREA_PRODU"], errors="coerce").round(1)  # 1 casa
-    if "Precipitação (mm)" in resumo_mes.columns:
-        resumo_mes["Precipitação (mm)"] = pd.to_numeric(resumo_mes["Precipitação (mm)"], errors="coerce").round(2)
-
-    for c in [
-        "Média Temp (°C)", "Média Amplitude Térmica (°C)", "Média Umidade (%)",
-        "Maior Temp (°C)", "Menor Temp (°C)", "Máx Dias Sem Chuva (média ponderada)"
-    ]:
-        if c in resumo_mes.columns:
-            resumo_mes[c] = pd.to_numeric(resumo_mes[c], errors="coerce").round(2)
-
-    st.success(f"✅ Resumo gerado: {len(resumo_mes)} períodos (Ano/Mês)")
-    st.dataframe(resumo_mes, use_container_width="stretch", height=420)
-
-    # Exportação DIRETO para Excel
-    excel_bytes = df_to_excel_bytes(resumo_mes, sheet_name="Resumo_AnoMes")
-    st.download_button(
-        label="⬇️ Baixar Tabela em Excel (.xlsx)",
-        data=excel_bytes,
-        file_name="resumo_ano_mes.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-    # ----------------------------------------------------
-    # 7) GRÁFICOS — um por item da tabela (BARRAS) (SEM AREA_PRODU)
+    # 5) Tabela — Resumo por ANO
     # ----------------------------------------------------
     st.markdown("---")
-    st.markdown('<div class="section-title">Gráficos por Ano/Mês</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Tabela — Resumo por ANO</div>', unsafe_allow_html=True)
+    st.caption(f"Filtro: {filtro_desc} | Período: {periodo_desc}")
 
-    chart_df = resumo_mes.copy()
-    chart_df["DATA_REF"] = pd.to_datetime(chart_df["Ano/Mês"] + "-01", errors="coerce")
-    chart_df = chart_df.sort_values("DATA_REF").copy()
+    if not resumo_ano.empty:
+        ordem_ano = [
+            "ANO", "AREA_PRODU", "Precipitação Total (mm)", "Precipitação Média Ponderada (mm)",
+            "Precipitação Máxima (mm)", "Precipitação Mínima (mm)", "Média Temp Ponderada (°C)",
+            "Temp Mínima (°C)", "Temp Máxima (°C)", "Amplitude Térmica Ponderada (°C)",
+            "Umidade Média Ponderada (%)", "Dias sem Chuva",
+        ]
+        resumo_ano = resumo_ano[[c for c in ordem_ano if c in resumo_ano.columns]]
 
-    cols_plot = [
-        c for c in chart_df.columns
-        if c not in ["Ano/Mês", "DATA_REF", "AREA_PRODU"]
-    ]
+        st.success(f"✅ Resumo anual gerado: {len(resumo_ano)} anos")
+        st.dataframe(resumo_ano, use_container_width=True, height=260)
 
-    for col in cols_plot:
-        fig = px.bar(
-            chart_df.dropna(subset=["DATA_REF"]),
-            x="DATA_REF",
-            y=col,
-            title=col,
+        excel_bytes_ano = df_to_excel_bytes(resumo_ano, sheet_name="Resumo_Ano")
+        st.download_button(
+            label="⬇️ Baixar Resumo por ANO (.xlsx)",
+            data=excel_bytes_ano,
+            file_name="resumo_ano.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_resumo_ano"
         )
-        fig.update_layout(xaxis_title="Ano/Mês", yaxis_title=col)
-        st.plotly_chart(fig, use_container_width="stretch")
+    else:
+        st.warning("⚠️ Não foi possível gerar o resumo por ano.")
 
+    # ----------------------------------------------------
+    # 6) Tabela — Resumo por Mês
+    # ----------------------------------------------------
+    st.markdown("---")
+    st.markdown('<div class="section-title">Tabela — Resumo por Mês</div>', unsafe_allow_html=True)
+    st.caption(f"Filtro: {filtro_desc} | Período: {periodo_desc}")
 
-        
-logger.info("App carregado com sucesso.")
+    if not resumo_mes.empty:
+        ordem_mes = [
+            "MES_ANO", "ANO", "MES", "AREA_PRODU",
+            "Precipitação Média Ponderada (mm)", "Precipitação Máxima (mm)",
+            "Precipitação Mínima (mm)", "Média Temp Ponderada (°C)",
+            "Temp Mínima (°C)", "Temp Máxima (°C)", "Amplitude Térmica Ponderada (°C)",
+            "Umidade Média Ponderada (%)", "Dias sem Chuva",
+        ]
+        resumo_mes_exibir = resumo_mes[[c for c in ordem_mes if c in resumo_mes.columns]].copy()
 
+        st.success(f"✅ Resumo mensal gerado: {len(resumo_mes_exibir)} meses")
+        st.dataframe(resumo_mes_exibir, use_container_width=True, height=420)
+
+        excel_bytes_mes = df_to_excel_bytes(resumo_mes_exibir, sheet_name="Resumo_Mes")
+        st.download_button(
+            label="⬇️ Baixar Resumo por MÊS (.xlsx)",
+            data=excel_bytes_mes,
+            file_name="resumo_mes.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_resumo_mes"
+        )
+    else:
+        st.warning("⚠️ Não foi possível gerar o resumo por mês.")
+
+    # ----------------------------------------------------
+    # 7) Gráficos na ordem solicitada
+    # ----------------------------------------------------
+    st.markdown("---")
+    st.markdown('<div class="section-title">Gráficos</div>', unsafe_allow_html=True)
+    st.caption(f"Filtro: {filtro_desc} | Período: {periodo_desc}")
+
+    grafico_ano_base = resumo_ano.copy() if not resumo_ano.empty else pd.DataFrame()
+    if not grafico_ano_base.empty:
+        grafico_ano_base["X_LABEL"] = grafico_ano_base["ANO"].astype(str)
+
+    grafico_mes_base = resumo_mes.copy() if not resumo_mes.empty else pd.DataFrame()
+    if not grafico_mes_base.empty:
+        grafico_mes_base["X_LABEL"] = grafico_mes_base["MES_ANO"].astype(str)
+
+    default_mes_checkbox = False if (not resumo_ano.empty and len(resumo_ano) > 2) else True
+
+    def titulo_grafico(base_titulo: str) -> str:
+        return f"{base_titulo} | {tipo_dado} | {filtro_desc} | Período: {periodo_desc}"
+
+    # 7.1 Precipitação Total
+    st.markdown("**Precipitação Total**")
+    mostrar_precip_total_por_mes = st.checkbox(
+        "Exibir Precipitação Total por Mês",
+        value=(default_mes_checkbox if not grafico_mes_base.empty else False),
+        key="mostrar_por_mes_precipitacao_total"
+    )
+
+    if mostrar_precip_total_por_mes and not grafico_mes_base.empty and "Precipitação Média Ponderada (mm)" in grafico_mes_base.columns:
+        base_plot = grafico_mes_base.copy()
+        y_col = "Precipitação Média Ponderada (mm)"
+        fig = px.bar(
+            base_plot.dropna(subset=[y_col]),
+            x="X_LABEL", y=y_col,
+            title=titulo_grafico("Precipitação Total")
+        )
+        fig.update_layout(xaxis_title="Mês", yaxis_title="Precipitação Total")
+        st.plotly_chart(fig, use_container_width=True)
+    elif not grafico_ano_base.empty and "Precipitação Total (mm)" in grafico_ano_base.columns:
+        base_plot = grafico_ano_base.copy()
+        y_col = "Precipitação Total (mm)"
+        fig = px.bar(
+            base_plot.dropna(subset=[y_col]),
+            x="X_LABEL", y=y_col,
+            title=titulo_grafico("Precipitação Total")
+        )
+        fig.update_layout(xaxis_title="Ano", yaxis_title="Precipitação Total")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Sem dados para exibir o gráfico Precipitação Total.")
+
+    # Função auxiliar para os demais gráficos
+    def plot_grafico_ordenado(col_plot, titulo):
+        fonte_mes = not grafico_mes_base.empty and col_plot in grafico_mes_base.columns
+        fonte_ano = not grafico_ano_base.empty and col_plot in grafico_ano_base.columns
+
+        if not fonte_mes and not fonte_ano:
+            return
+
+        st.markdown(f"**{titulo}**")
+        checkbox_key = f"mostrar_por_mes_{col_plot}"
+
+        mostrar_por_mes = st.checkbox(
+            f"Exibir {titulo} por Mês",
+            value=(default_mes_checkbox if fonte_mes else False),
+            key=checkbox_key
+        )
+
+        if mostrar_por_mes and fonte_mes:
+            base_plot = grafico_mes_base.copy()
+            x_col = "X_LABEL"
+            x_title = "Mês"
+        elif fonte_ano:
+            base_plot = grafico_ano_base.copy()
+            x_col = "X_LABEL"
+            x_title = "Ano"
+        elif fonte_mes:
+            base_plot = grafico_mes_base.copy()
+            x_col = "X_LABEL"
+            x_title = "Mês"
+        else:
+            st.info(f"Sem dados para exibir o gráfico {titulo}.")
+            return
+
+        fig = px.bar(
+            base_plot.dropna(subset=[col_plot]),
+            x=x_col, y=col_plot,
+            title=titulo_grafico(titulo)
+        )
+        fig.update_layout(xaxis_title=x_title, yaxis_title=titulo)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Ordem solicitada
+    plot_grafico_ordenado("Precipitação Média Ponderada (mm)", "Precipitação Média Ponderada")
+    plot_grafico_ordenado("Precipitação Máxima (mm)", "Precipitação Máxima")
+    plot_grafico_ordenado("Média Temp Ponderada (°C)", "Média Temp Ponderada")
+    plot_grafico_ordenado("Temp Mínima (°C)", "Temp Mínima")
+    plot_grafico_ordenado("Temp Máxima (°C)", "Temp Máxima")
+    plot_grafico_ordenado("Umidade Média Ponderada (%)", "Umidade Média Ponderada")
+    plot_grafico_ordenado("Precipitação Mínima (mm)", "Precipitação Mínima")
+
+    # ----------------------------------------------------
+    # 8) Tabela Comparativo entre anos
+    # ----------------------------------------------------
+    st.markdown("---")
+    st.markdown('<div class="section-title">Tabela Comparativo entre anos</div>', unsafe_allow_html=True)
+    st.caption(f"Filtro: {filtro_desc} | Período: {periodo_desc}")
+
+    comparativo_ano_exibir = pd.DataFrame()
+
+    if not resumo_ano.empty and "Precipitação Total (mm)" in resumo_ano.columns:
+        comparativo_ano = resumo_ano.copy()
+        comparativo_ano["Precipitação Total (mm)"] = pd.to_numeric(
+            comparativo_ano["Precipitação Total (mm)"], errors="coerce"
+        )
+        comparativo_ano = comparativo_ano.sort_values("ANO").copy()
+        comparativo_ano["Variação da Precipitação (%)"] = (
+            comparativo_ano["Precipitação Total (mm)"].pct_change() * 100
+        ).round(2)
+
+        ordem_comp = ["ANO", "Precipitação Total (mm)", "Variação da Precipitação (%)"]
+        comparativo_ano_exibir = comparativo_ano[[c for c in ordem_comp if c in comparativo_ano.columns]]
+
+        st.dataframe(comparativo_ano_exibir, use_container_width=True, height=220)
+    else:
+        st.info("Sem dados suficientes para o comparativo entre anos.")
+
+    # ----------------------------------------------------
+    # 9) Gráfico variação de Precipitação entre Anos
+    # ----------------------------------------------------
+    st.markdown("---")
+    st.markdown('<div class="section-title">Gráfico variação de Precipitação entre Anos</div>', unsafe_allow_html=True)
+    st.caption(f"Filtro: {filtro_desc} | Período: {periodo_desc}")
+
+    if not comparativo_ano_exibir.empty and "Variação da Precipitação (%)" in comparativo_ano_exibir.columns:
+        if comparativo_ano_exibir["Variação da Precipitação (%)"].notna().any():
+            fig_comp = px.bar(
+                comparativo_ano_exibir.dropna(subset=["Variação da Precipitação (%)"]),
+                x="ANO",
+                y="Variação da Precipitação (%)",
+                title=f"Variação de Precipitação entre Anos | {tipo_dado} | {filtro_desc} | Período: {periodo_desc}"
+            )
+            fig_comp.update_layout(
+                xaxis_title="Ano",
+                yaxis_title="Variação da Precipitação (%)"
+            )
+            st.plotly_chart(fig_comp, use_container_width=True)
+        else:
+            st.info("Não há variação calculável entre anos para exibir.")
+    else:
+        st.info("Sem dados suficientes para o gráfico de variação entre anos.")
+
+    # ----------------------------------------------------
+    # 10) Contexto do filtro aplicado
+    # ----------------------------------------------------
+    st.markdown("---")
+    with st.expander("ℹ️ Contexto do filtro aplicado", expanded=False):
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Tipo de dado", tipo_dado)
+        c2.metric("Data inicial", str(start_date))
+        c3.metric("Data final", str(end_date))
+        c4.metric("Registros", str(len(df_csv)))
+
+        f1, f2, f3, f4 = st.columns(4)
+        f1.write(f"**UF:** {selected_uf if selected_uf else '—'}")
+        f2.write(f"**Município:** {selected_municipio if selected_municipio else '—'}")
+        f3.write(f"**Empresa:** {selected_empresa if selected_empresa else '—'}")
+        f4.write(f"**Fazenda:** {selected_fazenda if selected_fazenda else '—'}")
+
+    # ----------------------------------------------------
+    # 11) Diagnóstico rápido — valores válidos
+    # ----------------------------------------------------
+    st.markdown("---")
+    with st.expander("🧪 Diagnóstico rápido — valores válidos", expanded=False):
+        cols_check = [
+            "AREA_PRODU",
+            "PRECIP_CHIRPS_MM",
+            "TEMP_MEDIA_C",
+            "UMID_MEDIA_PCT",
+            "DIAS_SEM_CHUVA",
+        ]
+        info = {}
+        for c in cols_check:
+            if c in df_work.columns:
+                info[c] = f"{int(df_work[c].notna().sum())} / {len(df_work)}"
+
+        st.write(info if info else "Nenhuma coluna esperada foi encontrada.")
+        st.write("Colunas disponíveis:", list(df_work.columns))
