@@ -1,3 +1,5 @@
+
+
 # -*- coding: utf-8 -*-
 """
 app.py — Avant | Visualizador de Shapefile + Dados Climáticos
@@ -699,7 +701,7 @@ else:
 # =====================================================================
 add_logo_sidebar()
 st.sidebar.title("Avant - Clima")
-st.sidebar.title("V1.2")
+st.sidebar.title("V1.3")
 st.sidebar.markdown("---")
 
 gdf_full = load_shapefile_full(GEO_PATH)
