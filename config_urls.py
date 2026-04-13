@@ -36,7 +36,7 @@ CSV_URLS = {
     2021: "https://storage.cloud.google.com/dadosclima/resumo_2021.csv",
     2022: "https://storage.cloud.google.com/dadosclima/resumo_2022.csv",
     2023: "https://storage.cloud.google.com/dadosclima/resumo_2023.csv",
-    2024: "https://storage.cloud.google.com/dadosclima/resumo_2024.csv",
+    2024: "https://storage.googleapis.com/dadosclima/resumo_2024.csv",
     2025: "https://storage.cloud.google.com/dadosclima/resumo_2025.csv",
     2026: "https://storage.cloud.google.com/dadosclima/resumo_2026.csv",
     }
