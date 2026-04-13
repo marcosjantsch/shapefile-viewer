@@ -1,80 +1,67 @@
+# -*- coding: utf-8 -*-
 # services/date_service.py
+
+from __future__ import annotations
+
 import pandas as pd
 
 
 def parse_date_safe(series: pd.Series) -> pd.Series:
     """
-    Converte uma série de datas para datetime de forma robusta.
-    
-    Prioridade:
-    1. Formato padrão do banco: YYYY/MM/DD
-    2. Fallback automático (caso venha outro formato inesperado)
-
-    Retorna:
-        pd.Series datetime (ou NaT em caso de erro)
+    Converte uma série para datetime de forma robusta.
+    Aceita datas como:
+    - 2025-01-01
+    - 2025/01/01
+    - 01/01/2025
+    - strings com espaços
     """
-
     if series is None:
-        return series
+        return pd.Series(dtype="datetime64[ns]")
 
-    s = series.astype(str).str.strip()
+    s = series.copy()
 
-    # 1. TENTATIVA PRINCIPAL — formato padrão do banco
-    dt = pd.to_datetime(s, format="%Y/%m/%d", errors="coerce")
+    # garante string apenas onde necessário
+    if not pd.api.types.is_datetime64_any_dtype(s):
+        s = s.astype(str).str.strip()
 
-    # 2. FALLBACK — para casos fora do padrão
-    mask_invalid = dt.isna()
-
-    if mask_invalid.any():
-        dt_fallback = pd.to_datetime(
-            s[mask_invalid],
-            errors="coerce",
-            infer_datetime_format=True,
+        # limpa valores vazios ou inválidos comuns
+        s = s.replace(
+            {
+                "": pd.NA,
+                "nan": pd.NA,
+                "None": pd.NA,
+                "NaT": pd.NA,
+            }
         )
-        dt.loc[mask_invalid] = dt_fallback
+
+    # 1ª tentativa: parsing geral
+    dt = pd.to_datetime(s, errors="coerce")
+
+    # 2ª tentativa: formato dia/mês/ano para o que falhou
+    mask = dt.isna()
+    if mask.any():
+        dt2 = pd.to_datetime(s[mask], errors="coerce", dayfirst=True)
+        dt.loc[mask] = dt2
 
     return dt
 
 
-def enrich_date_columns(df: pd.DataFrame, col: str = "DATA") -> pd.DataFrame:
+def enrich_date_columns(df: pd.DataFrame, date_col: str = "DATA") -> pd.DataFrame:
     """
-    Padroniza e cria colunas derivadas de data.
-
-    Gera:
-        - DATA (datetime)
-        - ANO
-        - MES (numérico)
-        - MES_NOME (pt-BR)
-        - MES_ANO (YYYY-MM)
+    Enriquece o DataFrame com colunas derivadas da data.
     """
-
-    if col not in df.columns:
+    if df is None or df.empty or date_col not in df.columns:
         return df
 
-    df = df.copy()
+    out = df.copy()
+    out[date_col] = parse_date_safe(out[date_col])
 
-    df[col] = parse_date_safe(df[col])
-    df = df.dropna(subset=[col])
+    if out[date_col].isna().all():
+        return out
 
-    meses_pt = {
-        1: "Jan", 2: "Fev", 3: "Mar", 4: "Abr", 5: "Mai", 6: "Jun",
-        7: "Jul", 8: "Ago", 9: "Set", 10: "Out", 11: "Nov", 12: "Dez"
-    }
+    out["ANO"] = out[date_col].dt.year
+    out["MES"] = out[date_col].dt.month
+    out["DIA"] = out[date_col].dt.day
+    out["MES_ANO"] = out[date_col].dt.strftime("%m/%Y")
 
-    df["ANO"] = df[col].dt.year
-    df["MES"] = df[col].dt.month
-    df["MES_NOME"] = df[col].dt.month.map(meses_pt)
-    df["MES_ANO"] = df[col].dt.strftime("%Y-%m")
-
-    return df
-
-
-def format_date_display(df: pd.DataFrame, col: str = "DATA") -> pd.DataFrame:
-    """
-    Apenas para exibição — NÃO usar antes de cálculos.
-    """
-
-    if col in df.columns:
-        df[col] = df[col].dt.strftime("%d-%m-%Y")
-
-    return df
+    return out
