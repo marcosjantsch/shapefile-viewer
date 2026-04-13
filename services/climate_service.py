@@ -26,7 +26,7 @@ DEBUG_CLIMATE = False
 # =====================================================================
 def _debug_write(msg: str) -> None:
     if DEBUG_CLIMATE:
-        st.write(msg)
+     
 
 
 def _debug_code(value: str, language: str = "") -> None:
@@ -266,7 +266,7 @@ def _apply_date_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame:
     total_depois = len(df_csv)
 
     if DEBUG_CLIMATE:
-        st.write(f"🗓️ DATA convertida com sucesso: {total_depois} de {total_antes} linhas mantidas.")
+     
 
     if df_csv.empty:
         st.warning("⚠️ Todos os registros foram descartados após converter DATA.")
@@ -286,7 +286,7 @@ def _apply_date_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame:
     df_csv.drop(columns=["MES_ANO_PERIODO"], inplace=True, errors="ignore")
 
     if DEBUG_CLIMATE:
-        st.write(f"📅 Registros após filtro de período: {len(df_csv)}")
+    
 
     return df_csv
 
@@ -298,14 +298,14 @@ def _apply_dimension_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame
     tipo = filtro["tipo_dado"]
 
     if DEBUG_CLIMATE:
-        st.write(f"🧭 Tipo de filtro: {tipo}")
+  
 
     if tipo == "Dados por Estado" and filtro["selected_uf"] and "UF" in df_csv.columns:
-        st.write(f"🔹 Filtrando UF = {filtro['selected_uf']}")
+       
         df_csv = df_csv[df_csv["UF"].astype(str) == str(filtro["selected_uf"])]
 
     elif tipo == "Dados por Empresa" and filtro["selected_empresa"] and "EMPRESA" in df_csv.columns:
-        st.write(f"🔹 Filtrando EMPRESA = {filtro['selected_empresa']}")
+    
         df_csv = df_csv[df_csv["EMPRESA"].astype(str) == str(filtro["selected_empresa"])]
 
     elif (
@@ -314,10 +314,7 @@ def _apply_dimension_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame
         and filtro["selected_fazenda"]
         and all(c in df_csv.columns for c in ["EMPRESA", "FAZENDA"])
     ):
-        st.write(
-            f"🔹 Filtrando EMPRESA = {filtro['selected_empresa']} | "
-            f"FAZENDA = {filtro['selected_fazenda']}"
-        )
+       
         df_csv = df_csv[
             (df_csv["EMPRESA"].astype(str) == str(filtro["selected_empresa"]))
             & (df_csv["FAZENDA"].astype(str) == str(filtro["selected_fazenda"]))
@@ -329,10 +326,7 @@ def _apply_dimension_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame
         and filtro["selected_municipio"]
         and all(c in df_csv.columns for c in ["UF", "MUNICIPIO"])
     ):
-        st.write(
-            f"🔹 Filtrando UF = {filtro['selected_uf']} | "
-            f"MUNICIPIO = {filtro['selected_municipio']}"
-        )
+       
         df_csv = df_csv[
             (df_csv["UF"].astype(str) == str(filtro["selected_uf"]))
             & (df_csv["MUNICIPIO"].astype(str) == str(filtro["selected_municipio"]))
@@ -340,11 +334,10 @@ def _apply_dimension_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame
 
     else:
         if DEBUG_CLIMATE:
-            st.write("ℹ️ Nenhum filtro dimensional adicional aplicado.")
+    
 
     if DEBUG_CLIMATE:
-        st.write(f"📌 Registros após filtros dimensionais: {len(df_csv)}")
-
+  
     return df_csv
 
 
@@ -364,8 +357,7 @@ def load_climate_data(filtro: dict) -> pd.DataFrame:
 
     frames = []
 
-    _debug_write("## 📂 Diagnóstico dos arquivos climáticos")
-    _debug_write(f"Anos solicitados: {years}")
+   
 
     for y in years:
         try:
@@ -385,9 +377,6 @@ def load_climate_data(filtro: dict) -> pd.DataFrame:
                 st.error(f"❌ Ano {y}: arquivo não pôde ser carregado.")
                 continue
 
-            st.success(f"✅ Ano {y}: carregado com {len(df_y)} linhas e {len(df_y.columns)} colunas.")
-            st.write(f"Colunas do ano {y}: {list(df_y.columns)}")
-
             frames.append(df_y)
 
             if log_container:
@@ -399,13 +388,13 @@ def load_climate_data(filtro: dict) -> pd.DataFrame:
                 log_container.error(f"❌ Erro ao ler CSV do ano {y}: {e}")
 
     if not frames:
-        st.error("❌ Nenhum arquivo anual foi carregado com sucesso.")
+
         return pd.DataFrame()
 
     df_csv = pd.concat(frames, ignore_index=True)
     df_csv = _normalize_columns(df_csv)
 
-    st.write(f"📦 Total concatenado antes de DATA/filtros: {len(df_csv)} registros")
+
 
     df_csv = _apply_date_filters(df_csv, filtro)
     if df_csv.empty:
@@ -417,5 +406,5 @@ def load_climate_data(filtro: dict) -> pd.DataFrame:
     if log_container:
         log_container.info(f"📦 Total final: {len(df_csv)} registros")
 
-    st.write(f"## ✅ Total final após todos os filtros: {len(df_csv)} registros")
+ 
     return df_csv
