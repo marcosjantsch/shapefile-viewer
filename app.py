@@ -7,9 +7,7 @@ Versão V2.1
 - Autenticação opcional
 - Mapa modularizado
 - Geometria original preservada para exibição sem simplificação
-- Datas tratadas via services/date_service.py
 - Tabs modularizadas
-- Sidebar modularizada em components/sidebar.py
 - Carregamento climático centralizado em services/climate_service.py
 """
 
@@ -40,7 +38,6 @@ from tabs.tab_clima import render_tab_clima
 from tabs.tab_analise import render_tab_analise
 from tabs.tab_previsao import render_tab_previsao
 from tabs.tab_tendencia_climatica import render_tab_tendencia_climatica
-from tabs.tab_log_eventos import render_tab_log_eventos
 
 from services.climate_service import load_climate_data
 
@@ -103,7 +100,6 @@ def load_shapefile_full(file_path: str) -> Optional[gpd.GeoDataFrame]:
         if str(gdf.crs).upper() != "EPSG:4326":
             gdf = gdf.to_crs("EPSG:4326")
 
-        # Guarda geometria original
         gdf["__geometry_original__"] = gdf.geometry.copy()
 
         try:
@@ -257,7 +253,7 @@ selected_municipio = sidebar_data["selected_municipio"]
 start_date = sidebar_data["start_date"]
 end_date = sidebar_data["end_date"]
 apply = sidebar_data["apply"]
-log_container = sidebar_data["log_container"]
+log_container = sidebar_data.get("log_container")
 
 if apply:
     st.session_state.aplicar = True
@@ -281,11 +277,40 @@ if st.session_state.aplicar:
     gdf_filtered = filter_gdf(gdf_full, filtro_shape)
 
 
+# =====================================================================
+# LOAD CSV VIA SERVICE
+# =====================================================================
+df_csv = None
+
+if st.session_state.get("aplicar", False):
+    try:
+        filtro_clima = {
+            "tipo_dado": tipo_dado,
+            "selected_uf": selected_uf,
+            "selected_empresa": selected_empresa,
+            "selected_fazenda": selected_fazenda,
+            "selected_municipio": selected_municipio,
+            "start_date": start_date,
+            "end_date": end_date,
+            "log_container": log_container,
+        }
+
+        with st.spinner("Carregando dados climáticos..."):
+            df_csv = load_climate_data(filtro_clima)
+
+    except Exception as e:
+        logger.error("Erro no carregamento dos CSVs via climate_service: %s", e)
+        if log_container:
+            log_container.error(f"❌ Erro geral no carregamento: {e}")
+        else:
+            st.error(f"❌ Erro geral no carregamento: {e}")
+        df_csv = None
+
 
 # =====================================================================
 # TABS
 # =====================================================================
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
     [
         "🗺️ Mapa Principal",
         "📋 Dados Shape",
@@ -293,7 +318,6 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
         "📉 Análise Avançada",
         "Previsão do Tempo",
         "Tendência Climática",
-        "Log de eventos",
     ]
 )
 
@@ -337,4 +361,3 @@ with tab6:
         selected_uf=selected_uf,
         logo_path=LOGO_PATH,
     )
-
