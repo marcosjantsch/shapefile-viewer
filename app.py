@@ -281,32 +281,6 @@ if st.session_state.aplicar:
     gdf_filtered = filter_gdf(gdf_full, filtro_shape)
 
 
-# =====================================================================
-# LOAD CSV VIA SERVICE
-# =====================================================================
-df_csv = None
-
-if st.session_state.get("aplicar", False):
-    try:
-        filtro_clima = {
-            "tipo_dado": tipo_dado,
-            "selected_uf": selected_uf,
-            "selected_empresa": selected_empresa,
-            "selected_fazenda": selected_fazenda,
-            "selected_municipio": selected_municipio,
-            "start_date": start_date,
-            "end_date": end_date,
-            "log_container": log_container,
-        }
-
-        with st.spinner("Carregando dados climáticos..."):
-            df_csv = load_climate_data(filtro_clima)
-
-    except Exception as e:
-        logger.error("Erro no carregamento dos CSVs via climate_service: %s", e)
-        log_container.error(f"❌ Erro geral no carregamento: {e}")
-        df_csv = None
-
 
 # =====================================================================
 # TABS
@@ -364,5 +338,3 @@ with tab6:
         logo_path=LOGO_PATH,
     )
 
-with tab7:
-    render_tab_log_eventos()
