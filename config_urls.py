@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 CSV_URLS = {
     # Exemplos (troque por URLs reais):
 
-    2000: "https://storage.googleapis.com/dadosclima/resumo_2000.csv",
+    2000: "https://storage.googleapis.com/dadosclima/C%C3%B3pia%20de%20resumo_2000.csv",
     2009: "https://1drv.ms/x/c/8b88b81c064543d3/IQDLb7qydahpSbj24F33KOu2AbJv0e6TQx7Br6mckZYpab0?e=tyLkRy",
     2010: "https://1drv.ms/x/c/8b88b81c064543d3/IQDsxDFoo_gVQo8DkT663SaWATMtMOkj13qArrhsSs6rrIo?e=g1emf7",
     2011: "https://1drv.ms/x/c/8b88b81c064543d3/IQD_9qo0bqWXQr4XGQTN9btXAWCJWVrZmfv7Xuh3psKU8aM?e=vCGlWP",
