@@ -1,7 +1,11 @@
+# -*- coding: utf-8 -*-
 # services/climate_service.py
+
 from __future__ import annotations
 
 import io
+import os
+import logging
 from datetime import date
 from typing import List, Optional
 
@@ -10,12 +14,16 @@ import requests
 import streamlit as st
 
 from config_urls import get_url_by_year, load_urls
-from date_service import parse_date_safe
+from services.date_service import parse_date_safe, enrich_date_columns
 
 
+logger = logging.getLogger(__name__)
 DEBUG_CLIMATE = True
 
 
+# =====================================================================
+# DEBUG HELPERS
+# =====================================================================
 def _debug_write(msg: str) -> None:
     if DEBUG_CLIMATE:
         st.write(msg)
@@ -26,6 +34,9 @@ def _debug_code(value: str, language: str = "") -> None:
         st.code(value, language=language)
 
 
+# =====================================================================
+# HELPERS
+# =====================================================================
 def get_years_in_range(start_date: date, end_date: date) -> List[int]:
     if start_date is None or end_date is None or end_date < start_date:
         return []
@@ -70,11 +81,9 @@ def _looks_like_excel(content: bytes, content_type: str) -> bool:
     if "spreadsheetml" in ct or "excel" in ct or "officedocument" in ct:
         return True
 
-    # XLSX é um ZIP; normalmente começa com PK
     if content[:2] == b"PK":
         return True
 
-    # XLS binário antigo
     if content[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
         return True
 
@@ -84,6 +93,7 @@ def _looks_like_excel(content: bytes, content_type: str) -> bool:
 def _try_read_excel(content: bytes, year: int) -> Optional[pd.DataFrame]:
     try:
         df = pd.read_excel(io.BytesIO(content))
+
         if df is None or df.empty:
             _debug_write(f"⚠️ Ano {year}: Excel lido, mas vazio.")
             return None
@@ -91,6 +101,7 @@ def _try_read_excel(content: bytes, year: int) -> Optional[pd.DataFrame]:
         df = _normalize_columns(df)
         _debug_write(f"✅ Ano {year}: arquivo lido como Excel com {len(df)} linhas.")
         return df
+
     except Exception as e:
         _debug_write(f"⚠️ Ano {year}: falha ao ler como Excel -> {e}")
         return None
@@ -132,99 +143,125 @@ def _try_read_csv(content: bytes, year: int) -> Optional[pd.DataFrame]:
     return None
 
 
+# =====================================================================
+# LEITURA ROBUSTA
+# =====================================================================
 @st.cache_data(show_spinner=False)
 def load_csv_from_url_robust(url: str, year: int) -> Optional[pd.DataFrame]:
     try:
         url = str(url).strip().replace("\\", "/")
-
-        # tenta forçar download para links curtos OneDrive
-        if "1drv.ms" in url and "download=1" not in url:
-            url = url + ("&download=1" if "?" in url else "?download=1")
+        is_local_file = os.path.isfile(url)
 
         _debug_write(f"### 🔎 Ano {year} — diagnóstico de carregamento")
-        _debug_write("🔗 URL utilizada:")
+        _debug_write("🔗 URL/caminho utilizado:")
         _debug_code(url)
 
-        response = requests.get(
-            url,
-            timeout=180,
-            allow_redirects=True,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/122.0.0.0 Safari/537.36"
-                )
-            },
-        )
+        if is_local_file:
+            with open(url, "rb") as f:
+                content = f.read()
 
-        _debug_write(f"📡 Status HTTP: {response.status_code}")
-        _debug_write(f"🌍 URL final após redirecionamento:")
-        _debug_code(response.url)
+            content_type = "arquivo/local"
+            final_url = url
+            status_code = 200
+        else:
+            if "1drv.ms" in url and "download=1" not in url:
+                url = url + ("&download=1" if "?" in url else "?download=1")
 
-        content_type = response.headers.get("Content-Type", "N/A")
-        content_length = len(response.content or b"")
+            response = requests.get(
+                url,
+                timeout=180,
+                allow_redirects=True,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/122.0.0.0 Safari/537.36"
+                    )
+                },
+            )
 
+            status_code = response.status_code
+            final_url = response.url
+            content_type = response.headers.get("Content-Type", "N/A")
+
+            _debug_write(f"📡 Status HTTP: {status_code}")
+            _debug_write("🌍 URL final após redirecionamento:")
+            _debug_code(final_url)
+
+            response.raise_for_status()
+            content = response.content or b""
+
+        content_length = len(content or b"")
         _debug_write(f"📄 Content-Type: {content_type}")
         _debug_write(f"📦 Tamanho recebido: {content_length} bytes")
 
-        response.raise_for_status()
-
-        content = response.content or b""
         if not content:
             _debug_write(f"❌ Ano {year}: resposta vazia.")
             return None
 
         preview = _preview_bytes(content)
+        preview_lower = preview.lower()
+
         _debug_write("🔍 Prévia do conteúdo recebido:")
         _debug_code(preview)
 
-        preview_lower = preview.lower()
-
-        # detecta HTML para evidenciar problema de link
         if "<html" in preview_lower or "<!doctype html" in preview_lower:
             _debug_write(
-                f"❌ Ano {year}: a URL retornou HTML em vez de CSV/Excel. "
+                f"❌ Ano {year}: a origem retornou HTML em vez de CSV/Excel. "
                 f"Isso indica página de visualização/redirecionamento."
             )
             return None
 
-        # tenta Excel primeiro quando parecer Excel
         if _looks_like_excel(content, content_type):
             df_excel = _try_read_excel(content, year)
             if df_excel is not None and not df_excel.empty:
+                if "DATA" in df_excel.columns:
+                    df_excel["DATA"] = parse_date_safe(df_excel["DATA"])
                 return df_excel
 
-        # tenta CSV
         df_csv = _try_read_csv(content, year)
         if df_csv is not None and not df_csv.empty:
+            if "DATA" in df_csv.columns:
+                df_csv["DATA"] = parse_date_safe(df_csv["DATA"])
             return df_csv
 
-        # fallback: mesmo sem assinatura clara, tenta Excel
         df_excel_fallback = _try_read_excel(content, year)
         if df_excel_fallback is not None and not df_excel_fallback.empty:
+            if "DATA" in df_excel_fallback.columns:
+                df_excel_fallback["DATA"] = parse_date_safe(df_excel_fallback["DATA"])
             return df_excel_fallback
 
-        _debug_write(f"❌ Ano {year}: conteúdo recebido, mas não foi possível ler como CSV nem Excel.")
+        _debug_write(
+            f"❌ Ano {year}: conteúdo recebido, mas não foi possível ler como CSV nem Excel."
+        )
         return None
 
     except requests.exceptions.RequestException as e:
+        logger.error("Erro HTTP/rede ao buscar arquivo do ano %s: %s", year, e)
         _debug_write(f"❌ Ano {year}: erro HTTP/rede ao buscar arquivo -> {e}")
         return None
+
     except Exception as e:
+        logger.error("Erro inesperado ao carregar arquivo do ano %s: %s", year, e)
         _debug_write(f"❌ Ano {year}: erro inesperado -> {e}")
         return None
 
 
+# =====================================================================
+# FILTROS
+# =====================================================================
 def _apply_date_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame:
+    if df_csv is None or df_csv.empty:
+        return pd.DataFrame()
+
     if "DATA" not in df_csv.columns:
         st.warning("⚠️ Coluna DATA não encontrada após carregamento.")
         return df_csv
 
     df_csv = df_csv.copy()
-    df_csv["DATA"] = parse_date_safe(df_csv["DATA"])
-    total_antes = len(df_csv)
 
+    total_antes = len(df_csv)
+    df_csv["DATA"] = parse_date_safe(df_csv["DATA"])
     df_csv = df_csv.dropna(subset=["DATA"]).copy()
     total_depois = len(df_csv)
 
@@ -235,16 +272,18 @@ def _apply_date_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame:
         st.warning("⚠️ Todos os registros foram descartados após converter DATA.")
         return df_csv
 
+    df_csv = enrich_date_columns(df_csv, "DATA")
+
     start_period = pd.Period(filtro["start_date"], freq="M")
     end_period = pd.Period(filtro["end_date"], freq="M")
 
-    df_csv["MES_ANO"] = df_csv["DATA"].dt.to_period("M")
+    df_csv["MES_ANO_PERIODO"] = df_csv["DATA"].dt.to_period("M")
     df_csv = df_csv[
-        (df_csv["MES_ANO"] >= start_period) &
-        (df_csv["MES_ANO"] <= end_period)
+        (df_csv["MES_ANO_PERIODO"] >= start_period)
+        & (df_csv["MES_ANO_PERIODO"] <= end_period)
     ].copy()
 
-    df_csv["MES_ANO"] = df_csv["MES_ANO"].astype(str)
+    df_csv.drop(columns=["MES_ANO_PERIODO"], inplace=True, errors="ignore")
 
     if DEBUG_CLIMATE:
         st.write(f"📅 Registros após filtro de período: {len(df_csv)}")
@@ -253,6 +292,9 @@ def _apply_date_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame:
 
 
 def _apply_dimension_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame:
+    if df_csv is None or df_csv.empty:
+        return pd.DataFrame()
+
     tipo = filtro["tipo_dado"]
 
     if DEBUG_CLIMATE:
@@ -277,8 +319,8 @@ def _apply_dimension_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame
             f"FAZENDA = {filtro['selected_fazenda']}"
         )
         df_csv = df_csv[
-            (df_csv["EMPRESA"].astype(str) == str(filtro["selected_empresa"])) &
-            (df_csv["FAZENDA"].astype(str) == str(filtro["selected_fazenda"]))
+            (df_csv["EMPRESA"].astype(str) == str(filtro["selected_empresa"]))
+            & (df_csv["FAZENDA"].astype(str) == str(filtro["selected_fazenda"]))
         ]
 
     elif (
@@ -292,8 +334,8 @@ def _apply_dimension_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame
             f"MUNICIPIO = {filtro['selected_municipio']}"
         )
         df_csv = df_csv[
-            (df_csv["UF"].astype(str) == str(filtro["selected_uf"])) &
-            (df_csv["MUNICIPIO"].astype(str) == str(filtro["selected_municipio"]))
+            (df_csv["UF"].astype(str) == str(filtro["selected_uf"]))
+            & (df_csv["MUNICIPIO"].astype(str) == str(filtro["selected_municipio"]))
         ]
 
     else:
@@ -306,41 +348,55 @@ def _apply_dimension_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame
     return df_csv
 
 
-def load_climate_data(filtro):
+# =====================================================================
+# API PRINCIPAL
+# =====================================================================
+def load_climate_data(filtro: dict) -> pd.DataFrame:
     df_csv = pd.DataFrame()
     urls = load_urls()
     years = get_years_in_range(filtro["start_date"], filtro["end_date"])
-    log_container = filtro["log_container"]
+    log_container = filtro.get("log_container")
 
     if not years:
-        log_container.warning("⚠️ Intervalo de datas inválido ou vazio.")
+        if log_container:
+            log_container.warning("⚠️ Intervalo de datas inválido ou vazio.")
         return df_csv
 
     frames = []
 
-    st.write("## 📂 Diagnóstico dos arquivos climáticos")
-    st.write(f"Anos solicitados: {years}")
+    _debug_write("## 📂 Diagnóstico dos arquivos climáticos")
+    _debug_write(f"Anos solicitados: {years}")
 
     for y in years:
-        url = get_url_by_year(urls, y)
+        try:
+            url = get_url_by_year(urls, y)
 
-        if not url:
-            log_container.warning(f"⚠️ Sem URL para o ano {y}")
-            st.warning(f"⚠️ Ano {y}: URL não encontrada no config_urls.py")
-            continue
+            if not url:
+                if log_container:
+                    log_container.warning(f"⚠️ Sem URL para o ano {y}")
+                st.warning(f"⚠️ Ano {y}: URL não encontrada no config_urls.py")
+                continue
 
-        df_y = load_csv_from_url_robust(url, y)
+            df_y = load_csv_from_url_robust(url, y)
 
-        if df_y is None or df_y.empty:
-            log_container.warning(f"⚠️ Ano {y} sem dados válidos")
-            st.error(f"❌ Ano {y}: arquivo não pôde ser carregado.")
-            continue
+            if df_y is None or df_y.empty:
+                if log_container:
+                    log_container.warning(f"⚠️ Ano {y} sem dados válidos")
+                st.error(f"❌ Ano {y}: arquivo não pôde ser carregado.")
+                continue
 
-        st.success(f"✅ Ano {y}: carregado com {len(df_y)} linhas e {len(df_y.columns)} colunas.")
-        st.write(f"Colunas do ano {y}: {list(df_y.columns)}")
+            st.success(f"✅ Ano {y}: carregado com {len(df_y)} linhas e {len(df_y.columns)} colunas.")
+            st.write(f"Colunas do ano {y}: {list(df_y.columns)}")
 
-        frames.append(df_y)
-        log_container.success(f"✅ {y}: carregado")
+            frames.append(df_y)
+
+            if log_container:
+                log_container.success(f"✅ {y}: carregado")
+
+        except Exception as e:
+            logger.error("Erro ao processar ano %s: %s", y, e)
+            if log_container:
+                log_container.error(f"❌ Erro ao ler CSV do ano {y}: {e}")
 
     if not frames:
         st.error("❌ Nenhum arquivo anual foi carregado com sucesso.")
@@ -358,7 +414,8 @@ def load_climate_data(filtro):
 
     df_csv = _apply_dimension_filters(df_csv, filtro)
 
-    log_container.info(f"📦 Total final: {len(df_csv)} registros")
-    st.write(f"## ✅ Total final após todos os filtros: {len(df_csv)} registros")
+    if log_container:
+        log_container.info(f"📦 Total final: {len(df_csv)} registros")
 
+    st.write(f"## ✅ Total final após todos os filtros: {len(df_csv)} registros")
     return df_csv
