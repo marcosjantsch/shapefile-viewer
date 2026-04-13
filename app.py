@@ -10,22 +10,18 @@ Versão V2.1
 - Datas tratadas via services/date_service.py
 - Tabs modularizadas
 - Sidebar modularizada em components/sidebar.py
+- Carregamento climático centralizado em services/climate_service.py
 """
 
-import io
 import os
 import logging
-from datetime import date
-from typing import Optional, List
+from typing import Optional
 
-import pandas as pd
 import geopandas as gpd
-import requests
 import streamlit as st
 
 from core.styles import apply_styles
 from core.stylesHEADER import apply_stylesHEADER
-from config_urls import load_urls, get_url_by_year
 from core.settings import (
     APP_TITLE,
     APP_ICON,
@@ -38,8 +34,6 @@ from core.settings import (
 from components.header import render_header
 from components.sidebar import render_sidebar
 
-from services.date_service import parse_date_safe, enrich_date_columns
-
 from tabs.tab_mapa import render_tab_mapa
 from tabs.tab_shape import render_tab_shape
 from tabs.tab_clima import render_tab_clima
@@ -47,6 +41,8 @@ from tabs.tab_analise import render_tab_analise
 from tabs.tab_previsao import render_tab_previsao
 from tabs.tab_tendencia_climatica import render_tab_tendencia_climatica
 from tabs.tab_log_eventos import render_tab_log_eventos
+
+from services.climate_service import load_climate_data
 
 
 # =====================================================================
@@ -125,109 +121,27 @@ def load_shapefile_full(file_path: str) -> Optional[gpd.GeoDataFrame]:
         return None
 
 
-def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    out = df.copy()
-    out.columns = [str(c).strip() for c in out.columns]
-
-    for c in out.columns:
-        if out[c].dtype == "object":
-            out[c] = out[c].astype(str).str.strip()
-
-    return out
-
-
-@st.cache_data(show_spinner=False)
-def load_csv_from_url_robust(url: str, year: int) -> Optional[pd.DataFrame]:
-    try:
-        url = str(url).strip().replace("\\", "/")
-        is_local_file = os.path.isfile(url)
-
-        if is_local_file:
-            with open(url, "rb") as f:
-                content = f.read()
-        else:
-            if "1drv.ms" in url and "download=1" not in url:
-                url = url + ("&download=1" if "?" in url else "?download=1")
-
-            response = requests.get(url, timeout=180)
-            response.raise_for_status()
-            content = response.content
-
-        for enc in ["utf-8", "utf-8-sig", "latin-1", "iso-8859-1", "cp1252"]:
-            try:
-                text = content.decode(enc)
-            except Exception:
-                continue
-
-            for sep in [";", ",", "\t", "|"]:
-                try:
-                    df = pd.read_csv(
-                        io.StringIO(text),
-                        sep=sep,
-                        engine="python",
-                        on_bad_lines="skip",
-                    )
-
-                    if df is None or df.empty:
-                        continue
-
-                    df.columns = [str(c).strip() for c in df.columns]
-                    if len(df.columns) <= 1:
-                        continue
-
-                    rename_map = {
-                        "Data": "DATA",
-                        "data": "DATA",
-                        "Empresa": "EMPRESA",
-                        "Fazenda": "FAZENDA",
-                        "Município": "MUNICIPIO",
-                        "Municipio": "MUNICIPIO",
-                        "AREA_PORDUT": "AREA_PRODU",
-                        "AREA_PRODUT": "AREA_PRODU",
-                        "AREA_PRODUTIVA": "AREA_PRODU",
-                    }
-                    df = df.rename(
-                        columns={k: v for k, v in rename_map.items() if k in df.columns}
-                    )
-
-                    if "DATA" in df.columns:
-                        df["DATA"] = parse_date_safe(df["DATA"])
-
-                    logger.info("CSV %s carregado com %d linhas", year, len(df))
-                    return df
-
-                except Exception as e:
-                    logger.error(
-                        "Erro ao interpretar CSV do ano %s (enc=%s, sep=%r): %s",
-                        year, enc, sep, e
-                    )
-                    continue
-
-        logger.warning("Falha ao interpretar CSV do ano %s", year)
-        return None
-
-    except Exception as e:
-        logger.error("Erro ao carregar CSV %s: %s", year, e)
-        return None
-
-
-def get_years_in_range(start_date: date, end_date: date) -> List[int]:
-    if start_date is None or end_date is None:
-        return []
-    if end_date < start_date:
-        return []
-    return list(range(start_date.year, end_date.year + 1))
-
-
 def filter_gdf(gdf: gpd.GeoDataFrame, filtro: dict) -> gpd.GeoDataFrame:
     gdf_filtered = gdf.copy()
     tipo = filtro["tipo_dado"]
 
-    if tipo == "Dados por Estado" and filtro["selected_uf"] and "UF" in gdf_filtered.columns:
-        gdf_filtered = gdf_filtered[gdf_filtered["UF"].astype(str) == str(filtro["selected_uf"])]
+    if (
+        tipo == "Dados por Estado"
+        and filtro["selected_uf"]
+        and "UF" in gdf_filtered.columns
+    ):
+        gdf_filtered = gdf_filtered[
+            gdf_filtered["UF"].astype(str) == str(filtro["selected_uf"])
+        ]
 
-    elif tipo == "Dados por Empresa" and filtro["selected_empresa"] and "EMPRESA" in gdf_filtered.columns:
-        gdf_filtered = gdf_filtered[gdf_filtered["EMPRESA"].astype(str) == str(filtro["selected_empresa"])]
+    elif (
+        tipo == "Dados por Empresa"
+        and filtro["selected_empresa"]
+        and "EMPRESA" in gdf_filtered.columns
+    ):
+        gdf_filtered = gdf_filtered[
+            gdf_filtered["EMPRESA"].astype(str) == str(filtro["selected_empresa"])
+        ]
 
     elif (
         tipo == "Dados Empresa/Fazenda"
@@ -236,8 +150,8 @@ def filter_gdf(gdf: gpd.GeoDataFrame, filtro: dict) -> gpd.GeoDataFrame:
         and all(c in gdf_filtered.columns for c in ["EMPRESA", "FAZENDA"])
     ):
         gdf_filtered = gdf_filtered[
-            (gdf_filtered["EMPRESA"].astype(str) == str(filtro["selected_empresa"])) &
-            (gdf_filtered["FAZENDA"].astype(str) == str(filtro["selected_fazenda"]))
+            (gdf_filtered["EMPRESA"].astype(str) == str(filtro["selected_empresa"]))
+            & (gdf_filtered["FAZENDA"].astype(str) == str(filtro["selected_fazenda"]))
         ]
 
     elif (
@@ -247,8 +161,11 @@ def filter_gdf(gdf: gpd.GeoDataFrame, filtro: dict) -> gpd.GeoDataFrame:
         and all(c in gdf_filtered.columns for c in ["UF", "MUNICIPIO"])
     ):
         gdf_filtered = gdf_filtered[
-            (gdf_filtered["UF"].astype(str) == str(filtro["selected_uf"])) &
-            (gdf_filtered["MUNICIPIO"].astype(str) == str(filtro["selected_municipio"]))
+            (gdf_filtered["UF"].astype(str) == str(filtro["selected_uf"]))
+            & (
+                gdf_filtered["MUNICIPIO"].astype(str)
+                == str(filtro["selected_municipio"])
+            )
         ]
 
     return gdf_filtered
@@ -351,7 +268,7 @@ if apply:
 # =====================================================================
 # FILTRO SHAPE
 # =====================================================================
-filtro = {
+filtro_shape = {
     "tipo_dado": tipo_dado,
     "selected_uf": selected_uf,
     "selected_empresa": selected_empresa,
@@ -361,96 +278,34 @@ filtro = {
 
 gdf_filtered = gdf_full.copy()
 if st.session_state.aplicar:
-    gdf_filtered = filter_gdf(gdf_full, filtro)
+    gdf_filtered = filter_gdf(gdf_full, filtro_shape)
 
 
 # =====================================================================
-# LOAD CSV
+# LOAD CSV VIA SERVICE
 # =====================================================================
-df_csv = pd.DataFrame()
+df_csv = None
 
 if st.session_state.get("aplicar", False):
     try:
-        urls = load_urls()
-        years = get_years_in_range(start_date, end_date)
+        filtro_clima = {
+            "tipo_dado": tipo_dado,
+            "selected_uf": selected_uf,
+            "selected_empresa": selected_empresa,
+            "selected_fazenda": selected_fazenda,
+            "selected_municipio": selected_municipio,
+            "start_date": start_date,
+            "end_date": end_date,
+            "log_container": log_container,
+        }
 
-        if years:
-            with st.spinner(f"Carregando dados climáticos ({', '.join(map(str, years))})..."):
-                frames = []
-
-                for y in years:
-                    try:
-                        url = get_url_by_year(urls, y)
-
-                        if not url:
-                            log_container.warning(f"⚠️ Sem URL para o ano {y}")
-                            continue
-
-                        df_y = load_csv_from_url_robust(url, y)
-
-                        if df_y is None or df_y.empty:
-                            log_container.warning(f"⚠️ Ano {y} sem dados válidos")
-                            continue
-
-                        frames.append(df_y)
-                        log_container.success(f"✅ {y}: carregado")
-
-                    except Exception as e:
-                        logger.error("Erro ao ler CSV ano %s: %s", y, e)
-                        log_container.error(f"❌ Erro ao ler CSV do ano {y}: {e}")
-
-                if frames:
-                    df_csv = pd.concat(frames, ignore_index=True)
-
-        if df_csv is not None and not df_csv.empty:
-            df_csv = _normalize_columns(df_csv)
-
-            if "DATA" in df_csv.columns:
-                df_csv = enrich_date_columns(df_csv, "DATA")
-
-                start_period = pd.Period(start_date, freq="M")
-                end_period = pd.Period(end_date, freq="M")
-
-                df_csv["MES_ANO_PERIODO"] = df_csv["DATA"].dt.to_period("M")
-                df_csv = df_csv[
-                    (df_csv["MES_ANO_PERIODO"] >= start_period) &
-                    (df_csv["MES_ANO_PERIODO"] <= end_period)
-                ].copy()
-                df_csv.drop(columns=["MES_ANO_PERIODO"], inplace=True, errors="ignore")
-
-            if tipo_dado == "Dados por Estado" and selected_uf and "UF" in df_csv.columns:
-                df_csv = df_csv[df_csv["UF"].astype(str) == str(selected_uf)]
-
-            elif tipo_dado == "Dados por Empresa" and selected_empresa and "EMPRESA" in df_csv.columns:
-                df_csv = df_csv[df_csv["EMPRESA"].astype(str) == str(selected_empresa)]
-
-            elif (
-                tipo_dado == "Dados Empresa/Fazenda"
-                and selected_empresa and selected_fazenda
-                and all(c in df_csv.columns for c in ["EMPRESA", "FAZENDA"])
-            ):
-                df_csv = df_csv[
-                    (df_csv["EMPRESA"].astype(str) == str(selected_empresa)) &
-                    (df_csv["FAZENDA"].astype(str) == str(selected_fazenda))
-                ]
-
-            elif (
-                tipo_dado == "Dados por Município"
-                and selected_uf and selected_municipio
-                and all(c in df_csv.columns for c in ["UF", "MUNICIPIO"])
-            ):
-                df_csv = df_csv[
-                    (df_csv["UF"].astype(str) == str(selected_uf)) &
-                    (df_csv["MUNICIPIO"].astype(str) == str(selected_municipio))
-                ]
-
-            log_container.info(f"📦 Total final: {len(df_csv)} registros")
-        else:
-            log_container.warning("⚠️ Nenhum registro carregado.")
+        with st.spinner("Carregando dados climáticos..."):
+            df_csv = load_climate_data(filtro_clima)
 
     except Exception as e:
-        logger.error("Erro no carregamento dos CSVs: %s", e)
+        logger.error("Erro no carregamento dos CSVs via climate_service: %s", e)
         log_container.error(f"❌ Erro geral no carregamento: {e}")
+        df_csv = None
 
 
 # =====================================================================
@@ -469,7 +324,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
 )
 
 with tab1:
-    render_tab_mapa(gdf_full, gdf_filtered, filtro)
+    render_tab_mapa(gdf_full, gdf_filtered, filtro_shape)
 
 with tab2:
     render_tab_shape(gdf_filtered)
