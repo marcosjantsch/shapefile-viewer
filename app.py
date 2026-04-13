@@ -9,6 +9,7 @@ Versão V2.1
 - Geometria original preservada para exibição sem simplificação
 - Datas tratadas via services/date_service.py
 - Tabs modularizadas
+- Sidebar modularizada em components/sidebar.py
 """
 
 import io
@@ -33,9 +34,9 @@ from core.settings import (
     GEO_PATH,
     LOGO_PATH,
     AUTH_ENABLED,
-    TIPOS_DADO,
 )
 from components.header import render_header
+from components.sidebar import render_sidebar
 
 from services.date_service import parse_date_safe, enrich_date_columns
 
@@ -43,9 +44,10 @@ from tabs.tab_mapa import render_tab_mapa
 from tabs.tab_shape import render_tab_shape
 from tabs.tab_clima import render_tab_clima
 from tabs.tab_analise import render_tab_analise
-
 from tabs.tab_previsao import render_tab_previsao
 from tabs.tab_tendencia_climatica import render_tab_tendencia_climatica
+from tabs.tab_log_eventos import render_tab_log_eventos
+
 
 # =====================================================================
 # LOGGING
@@ -65,12 +67,6 @@ logger = logging.getLogger(__name__)
 # CONFIG
 # =====================================================================
 SIMPLIFICATION_TOLERANCE = 0.001
-
-MESES_DISPONIVEIS = {
-    "Jan": 1, "Fev": 2, "Mar": 3, "Abr": 4, "Mai": 5, "Jun": 6,
-    "Jul": 7, "Ago": 8, "Set": 9, "Out": 10, "Nov": 11, "Dez": 12
-}
-ANOS_DISPONIVEIS = list(range(2000, 2026))
 
 
 # =====================================================================
@@ -190,7 +186,9 @@ def load_csv_from_url_robust(url: str, year: int) -> Optional[pd.DataFrame]:
                         "AREA_PRODUT": "AREA_PRODU",
                         "AREA_PRODUTIVA": "AREA_PRODU",
                     }
-                    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
+                    df = df.rename(
+                        columns={k: v for k, v in rename_map.items() if k in df.columns}
+                    )
 
                     if "DATA" in df.columns:
                         df["DATA"] = parse_date_safe(df["DATA"])
@@ -199,7 +197,10 @@ def load_csv_from_url_robust(url: str, year: int) -> Optional[pd.DataFrame]:
                     return df
 
                 except Exception as e:
-                    logger.error("Erro ao interpretar CSV do ano %s (enc=%s, sep=%r): %s", year, enc, sep, e)
+                    logger.error(
+                        "Erro ao interpretar CSV do ano %s (enc=%s, sep=%r): %s",
+                        year, enc, sep, e
+                    )
                     continue
 
         logger.warning("Falha ao interpretar CSV do ano %s", year)
@@ -216,12 +217,6 @@ def get_years_in_range(start_date: date, end_date: date) -> List[int]:
     if end_date < start_date:
         return []
     return list(range(start_date.year, end_date.year + 1))
-
-
-def safe_unique(df: pd.DataFrame, col: str) -> List[str]:
-    if col not in df.columns:
-        return []
-    return sorted([str(x) for x in df[col].dropna().unique()])
 
 
 def filter_gdf(gdf: gpd.GeoDataFrame, filtro: dict) -> gpd.GeoDataFrame:
@@ -335,63 +330,17 @@ if gdf_full is None:
 # =====================================================================
 # SIDEBAR
 # =====================================================================
-tipo_dado = st.sidebar.selectbox("Tipo de Dado", TIPOS_DADO)
+sidebar_data = render_sidebar(gdf_full)
 
-selected_uf = None
-selected_empresa = None
-selected_fazenda = None
-selected_municipio = None
-
-if tipo_dado == "Dados por Estado":
-    ufs = safe_unique(gdf_full, "UF")
-    selected_uf = st.sidebar.selectbox("Selecione UF", ufs) if ufs else None
-
-elif tipo_dado == "Dados por Empresa":
-    empresas = safe_unique(gdf_full, "EMPRESA")
-    selected_empresa = st.sidebar.selectbox("Selecione Empresa", empresas) if empresas else None
-
-elif tipo_dado == "Dados Empresa/Fazenda":
-    empresas = safe_unique(gdf_full, "EMPRESA")
-    selected_empresa = st.sidebar.selectbox("Selecione Empresa", empresas) if empresas else None
-
-    if selected_empresa and "FAZENDA" in gdf_full.columns and "EMPRESA" in gdf_full.columns:
-        fazendas = safe_unique(
-            gdf_full[gdf_full["EMPRESA"].astype(str) == str(selected_empresa)],
-            "FAZENDA",
-        )
-        selected_fazenda = st.sidebar.selectbox("Selecione Fazenda", fazendas) if fazendas else None
-
-elif tipo_dado == "Dados por Município":
-    ufs = safe_unique(gdf_full, "UF")
-    selected_uf = st.sidebar.selectbox("Selecione UF", ufs) if ufs else None
-
-    if selected_uf and "MUNICIPIO" in gdf_full.columns and "UF" in gdf_full.columns:
-        municipios = safe_unique(
-            gdf_full[gdf_full["UF"].astype(str) == str(selected_uf)],
-            "MUNICIPIO",
-        )
-        selected_municipio = st.sidebar.selectbox("Selecione Município", municipios) if municipios else None
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Período mensal")
-
-col1, col2 = st.sidebar.columns(2)
-with col1:
-    start_mes_nome = st.selectbox("Mês inicial", list(MESES_DISPONIVEIS.keys()), index=0)
-with col2:
-    start_ano = st.selectbox("Ano inicial", ANOS_DISPONIVEIS, index=ANOS_DISPONIVEIS.index(2025))
-
-col3, col4 = st.sidebar.columns(2)
-with col3:
-    end_mes_nome = st.selectbox("Mês final", list(MESES_DISPONIVEIS.keys()), index=11)
-with col4:
-    end_ano = st.selectbox("Ano final", ANOS_DISPONIVEIS, index=ANOS_DISPONIVEIS.index(2025))
-
-start_date = date(start_ano, MESES_DISPONIVEIS[start_mes_nome], 1)
-end_date = date(end_ano, MESES_DISPONIVEIS[end_mes_nome], 1)
-
-apply = st.sidebar.button("✅ Aplicar Filtros")
-log_container = st.sidebar.container() if apply else st.sidebar.empty()
+tipo_dado = sidebar_data["tipo_dado"]
+selected_uf = sidebar_data["selected_uf"]
+selected_empresa = sidebar_data["selected_empresa"]
+selected_fazenda = sidebar_data["selected_fazenda"]
+selected_municipio = sidebar_data["selected_municipio"]
+start_date = sidebar_data["start_date"]
+end_date = sidebar_data["end_date"]
+apply = sidebar_data["apply"]
+log_container = sidebar_data["log_container"]
 
 if apply:
     st.session_state.aplicar = True
@@ -507,8 +456,16 @@ if st.session_state.get("aplicar", False):
 # =====================================================================
 # TABS
 # =====================================================================
-tab1, tab2, tab3, tab4, tab5,tab6  = st.tabs(
-    ["🗺️ Mapa Principal", "📋 Dados Shape", "📈 Dados de Clima", "📉 Análise Avançada", "Previsão do Tempo", "Tendência Climática"]
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+    [
+        "🗺️ Mapa Principal",
+        "📋 Dados Shape",
+        "📈 Dados de Clima",
+        "📉 Análise Avançada",
+        "Previsão do Tempo",
+        "Tendência Climática",
+        "Log de eventos",
+    ]
 )
 
 with tab1:
@@ -518,7 +475,6 @@ with tab2:
     render_tab_shape(gdf_filtered)
 
 with tab3:
-    # MArcos st.write(df_csv[["EMPRESA", "FAZENDA", "DATA", "AREA_T", "AREA_PRODU"]].head(20))
     render_tab_clima(df_csv)
 
 with tab4:
@@ -541,7 +497,7 @@ with tab5:
         selected_municipio=selected_municipio,
         selected_uf=selected_uf,
         logo_path=LOGO_PATH,
-    )    
+    )
 
 with tab6:
     render_tab_tendencia_climatica(
@@ -552,3 +508,6 @@ with tab6:
         selected_uf=selected_uf,
         logo_path=LOGO_PATH,
     )
+
+with tab7:
+    render_tab_log_eventos()

@@ -62,13 +62,13 @@ def render_sidebar(gdf_full):
     with col1:
         start_mes_nome = st.selectbox("Mês inicial", list(MESES_DISPONIVEIS.keys()), index=0)
     with col2:
-        start_ano = st.selectbox("Ano inicial", ANOS_DISPONIVEIS, index=ANOS_DISPONIVEIS.index(2025))
+        start_ano = st.selectbox("Ano inicial", ANOS_DISPONIVEIS, index=ANOS_DISPONIVEIS.index(2026))
 
     col3, col4 = st.sidebar.columns(2)
     with col3:
         end_mes_nome = st.selectbox("Mês final", list(MESES_DISPONIVEIS.keys()), index=11)
     with col4:
-        end_ano = st.selectbox("Ano final", ANOS_DISPONIVEIS, index=ANOS_DISPONIVEIS.index(2025))
+        end_ano = st.selectbox("Ano final", ANOS_DISPONIVEIS, index=ANOS_DISPONIVEIS.index(2026))
 
     start_date = date(start_ano, MESES_DISPONIVEIS[start_mes_nome], 1)
     end_date = date(end_ano, MESES_DISPONIVEIS[end_mes_nome], 1)
