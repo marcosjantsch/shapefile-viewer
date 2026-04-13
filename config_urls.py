@@ -12,7 +12,7 @@ CSV_URLS = {
     # Exemplos (troque por URLs reais):
 
 
-    2000: "https://storage.cloud.google.com/dadosclima/resumo_2000.csv",
+    2000: "https://storage.googleapis.com/dadosclima/resumo_2000.csv",
     2001: "https://storage.cloud.google.com/dadosclima/resumo_2001.csv",
     2002: "https://storage.cloud.google.com/dadosclima/resumo_2002.csv",
     2003: "https://storage.cloud.google.com/dadosclima/resumo_2003.csv",
