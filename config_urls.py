@@ -28,7 +28,7 @@ CSV_URLS = {
     2022: "https://1drv.ms/x/c/8b88b81c064543d3/IQC0UOfqmhKZS5Tg8n2LdoZ6AdeQnGzvQg1XKhxNbdk0lyU?e=Ia3tuU",
     2023: "https://1drv.ms/x/c/8b88b81c064543d3/IQBgV_Z6JB-XQZipw76c2mKQAQxloSWLKSrGP5aysU5v2Iw?e=rLio8f",
     2024: "https://1drv.ms/x/c/8b88b81c064543d3/IQBZmghrro3XQ6Bz8XWUu0WHAeHdEDXYqiUXN5IxOahSqLI?e=fPIepi",
-    2025: "https://1drv.ms/x/c/8b88b81c064543d3/IQCibj9FcWOCQbswiNQl1MtcAfD2EyiGYsNHqhYrtAAcuAc?e=7Yevej",
+    2025: "https://raw.githubusercontent.com/marcosjantsch/shapefile-viewer/main/DadosOnline/resumo_2025.csv",
     2026: "https://1drv.ms/x/c/8b88b81c064543d3/IQBWvTBVEXTVQKP288zxC9NNARd2kJMHFWecmteIaitSDoM?e=dQVahL",
     }
 
