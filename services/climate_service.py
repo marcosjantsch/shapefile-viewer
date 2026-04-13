@@ -28,52 +28,26 @@ def load_csv_from_url_robust(url: str, year: int) -> Optional[pd.DataFrame]:
         if "1drv.ms" in url and "download=1" not in url:
             url = url + ("&download=1" if "?" in url else "?download=1")
 
+        st.write(f"🔗 Ano {year} - URL utilizada:")
+        st.code(url)
+
         response = requests.get(url, timeout=180)
-        response.raise_for_status()
+
+        st.write(f"📡 Status HTTP: {response.status_code}")
+
+        content_type = response.headers.get("Content-Type", "N/A")
+        st.write(f"📄 Content-Type: {content_type}")
+
         content = response.content
+        st.write(f"📦 Tamanho do arquivo: {len(content)} bytes")
 
-        for enc in ["utf-8", "utf-8-sig", "latin-1", "iso-8859-1", "cp1252"]:
-            try:
-                text = content.decode(enc)
-            except Exception:
-                continue
-
-            for sep in [";", ",", "\t", "|"]:
-                try:
-                    df = pd.read_csv(
-                        io.StringIO(text),
-                        sep=sep,
-                        engine="python",
-                        on_bad_lines="skip"
-                    )
-
-                    if df is None or df.empty or len(df.columns) <= 1:
-                        continue
-
-                    df.columns = [str(c).strip() for c in df.columns]
-
-                    rename_map = {
-                        "Data": "DATA",
-                        "data": "DATA",
-                        "Empresa": "EMPRESA",
-                        "Fazenda": "FAZENDA",
-                        "Município": "MUNICIPIO",
-                        "Municipio": "MUNICIPIO",
-                        "AREA_PORDUT": "AREA_PRODU",
-                        "AREA_PRODUT": "AREA_PRODU",
-                    }
-
-                    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
-
-                    if "DATA" in df.columns:
-                        df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce", dayfirst=True)
-
-                    return df
-                except Exception:
-                    continue
-        return None
-    except Exception:
-        return None
+        # MOSTRAR INÍCIO DO CONTEÚDO (IMPORTANTE)
+        try:
+            preview = content[:300].decode("utf-8", errors="ignore")
+            st.write("🔍 Prévia do conteúdo:")
+            st.code(preview)
+        except:
+            st.write("⚠️ Não foi possível mostrar prévia do conteúdo")
 
 def load_climate_data(filtro):
     df_csv = pd.DataFrame()
