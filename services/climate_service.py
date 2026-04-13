@@ -18,7 +18,7 @@ from services.date_service import parse_date_safe, enrich_date_columns
 
 
 logger = logging.getLogger(__name__)
-DEBUG_CLIMATE = True
+DEBUG_CLIMATE = False
 
 
 # =====================================================================
