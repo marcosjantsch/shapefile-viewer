@@ -18,20 +18,6 @@ from services.date_service import parse_date_safe, enrich_date_columns
 
 
 logger = logging.getLogger(__name__)
-DEBUG_CLIMATE = False
-
-
-# =====================================================================
-# DEBUG HELPERS
-# =====================================================================
-def _debug_write(msg: str) -> None:
-    if DEBUG_CLIMATE:
-     
-
-
-def _debug_code(value: str, language: str = "") -> None:
-    if DEBUG_CLIMATE:
-        st.code(value, language=language)
 
 
 # =====================================================================
@@ -95,15 +81,14 @@ def _try_read_excel(content: bytes, year: int) -> Optional[pd.DataFrame]:
         df = pd.read_excel(io.BytesIO(content))
 
         if df is None or df.empty:
-            _debug_write(f"⚠️ Ano {year}: Excel lido, mas vazio.")
             return None
 
         df = _normalize_columns(df)
-        _debug_write(f"✅ Ano {year}: arquivo lido como Excel com {len(df)} linhas.")
+        logger.info("Ano %s: arquivo lido como Excel com %s linhas.", year, len(df))
         return df
 
     except Exception as e:
-        _debug_write(f"⚠️ Ano {year}: falha ao ler como Excel -> {e}")
+        logger.warning("Ano %s: falha ao ler como Excel: %s", year, e)
         return None
 
 
@@ -130,16 +115,19 @@ def _try_read_csv(content: bytes, year: int) -> Optional[pd.DataFrame]:
                     continue
 
                 df = _normalize_columns(df)
-                _debug_write(
-                    f"✅ Ano {year}: arquivo lido como CSV "
-                    f"(encoding={enc}, separador={repr(sep)}) com {len(df)} linhas."
+                logger.info(
+                    "Ano %s: arquivo lido como CSV (encoding=%s, separador=%r) com %s linhas.",
+                    year,
+                    enc,
+                    sep,
+                    len(df),
                 )
                 return df
 
             except Exception:
                 continue
 
-    _debug_write(f"❌ Ano {year}: não foi possível interpretar o conteúdo como CSV.")
+    logger.warning("Ano %s: não foi possível interpretar o conteúdo como CSV.", year)
     return None
 
 
@@ -152,17 +140,11 @@ def load_csv_from_url_robust(url: str, year: int) -> Optional[pd.DataFrame]:
         url = str(url).strip().replace("\\", "/")
         is_local_file = os.path.isfile(url)
 
-        _debug_write(f"### 🔎 Ano {year} — diagnóstico de carregamento")
-        _debug_write("🔗 URL/caminho utilizado:")
-        _debug_code(url)
-
         if is_local_file:
             with open(url, "rb") as f:
                 content = f.read()
 
             content_type = "arquivo/local"
-            final_url = url
-            status_code = 200
         else:
             if "1drv.ms" in url and "download=1" not in url:
                 url = url + ("&download=1" if "?" in url else "?download=1")
@@ -180,35 +162,20 @@ def load_csv_from_url_robust(url: str, year: int) -> Optional[pd.DataFrame]:
                 },
             )
 
-            status_code = response.status_code
-            final_url = response.url
-            content_type = response.headers.get("Content-Type", "N/A")
-
-            _debug_write(f"📡 Status HTTP: {status_code}")
-            _debug_write("🌍 URL final após redirecionamento:")
-            _debug_code(final_url)
-
             response.raise_for_status()
             content = response.content or b""
-
-        content_length = len(content or b"")
-        _debug_write(f"📄 Content-Type: {content_type}")
-        _debug_write(f"📦 Tamanho recebido: {content_length} bytes")
+            content_type = response.headers.get("Content-Type", "N/A")
 
         if not content:
-            _debug_write(f"❌ Ano {year}: resposta vazia.")
+            logger.warning("Ano %s: resposta vazia.", year)
             return None
 
         preview = _preview_bytes(content)
         preview_lower = preview.lower()
 
-        _debug_write("🔍 Prévia do conteúdo recebido:")
-        _debug_code(preview)
-
         if "<html" in preview_lower or "<!doctype html" in preview_lower:
-            _debug_write(
-                f"❌ Ano {year}: a origem retornou HTML em vez de CSV/Excel. "
-                f"Isso indica página de visualização/redirecionamento."
+            logger.warning(
+                "Ano %s: a origem retornou HTML em vez de CSV/Excel.", year
             )
             return None
 
@@ -231,19 +198,18 @@ def load_csv_from_url_robust(url: str, year: int) -> Optional[pd.DataFrame]:
                 df_excel_fallback["DATA"] = parse_date_safe(df_excel_fallback["DATA"])
             return df_excel_fallback
 
-        _debug_write(
-            f"❌ Ano {year}: conteúdo recebido, mas não foi possível ler como CSV nem Excel."
+        logger.warning(
+            "Ano %s: conteúdo recebido, mas não foi possível ler como CSV nem Excel.",
+            year,
         )
         return None
 
     except requests.exceptions.RequestException as e:
         logger.error("Erro HTTP/rede ao buscar arquivo do ano %s: %s", year, e)
-        _debug_write(f"❌ Ano {year}: erro HTTP/rede ao buscar arquivo -> {e}")
         return None
 
     except Exception as e:
         logger.error("Erro inesperado ao carregar arquivo do ano %s: %s", year, e)
-        _debug_write(f"❌ Ano {year}: erro inesperado -> {e}")
         return None
 
 
@@ -259,14 +225,8 @@ def _apply_date_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame:
         return df_csv
 
     df_csv = df_csv.copy()
-
-    total_antes = len(df_csv)
     df_csv["DATA"] = parse_date_safe(df_csv["DATA"])
     df_csv = df_csv.dropna(subset=["DATA"]).copy()
-    total_depois = len(df_csv)
-
-    if DEBUG_CLIMATE:
-     
 
     if df_csv.empty:
         st.warning("⚠️ Todos os registros foram descartados após converter DATA.")
@@ -285,9 +245,6 @@ def _apply_date_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame:
 
     df_csv.drop(columns=["MES_ANO_PERIODO"], inplace=True, errors="ignore")
 
-    if DEBUG_CLIMATE:
-    
-
     return df_csv
 
 
@@ -297,15 +254,14 @@ def _apply_dimension_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame
 
     tipo = filtro["tipo_dado"]
 
-    if DEBUG_CLIMATE:
-  
-
     if tipo == "Dados por Estado" and filtro["selected_uf"] and "UF" in df_csv.columns:
-       
         df_csv = df_csv[df_csv["UF"].astype(str) == str(filtro["selected_uf"])]
 
-    elif tipo == "Dados por Empresa" and filtro["selected_empresa"] and "EMPRESA" in df_csv.columns:
-    
+    elif (
+        tipo == "Dados por Empresa"
+        and filtro["selected_empresa"]
+        and "EMPRESA" in df_csv.columns
+    ):
         df_csv = df_csv[df_csv["EMPRESA"].astype(str) == str(filtro["selected_empresa"])]
 
     elif (
@@ -314,7 +270,6 @@ def _apply_dimension_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame
         and filtro["selected_fazenda"]
         and all(c in df_csv.columns for c in ["EMPRESA", "FAZENDA"])
     ):
-       
         df_csv = df_csv[
             (df_csv["EMPRESA"].astype(str) == str(filtro["selected_empresa"]))
             & (df_csv["FAZENDA"].astype(str) == str(filtro["selected_fazenda"]))
@@ -326,18 +281,11 @@ def _apply_dimension_filters(df_csv: pd.DataFrame, filtro: dict) -> pd.DataFrame
         and filtro["selected_municipio"]
         and all(c in df_csv.columns for c in ["UF", "MUNICIPIO"])
     ):
-       
         df_csv = df_csv[
             (df_csv["UF"].astype(str) == str(filtro["selected_uf"]))
             & (df_csv["MUNICIPIO"].astype(str) == str(filtro["selected_municipio"]))
         ]
 
-    else:
-        if DEBUG_CLIMATE:
-    
-
-    if DEBUG_CLIMATE:
-  
     return df_csv
 
 
@@ -356,8 +304,6 @@ def load_climate_data(filtro: dict) -> pd.DataFrame:
         return df_csv
 
     frames = []
-
-   
 
     for y in years:
         try:
@@ -388,13 +334,10 @@ def load_climate_data(filtro: dict) -> pd.DataFrame:
                 log_container.error(f"❌ Erro ao ler CSV do ano {y}: {e}")
 
     if not frames:
-
         return pd.DataFrame()
 
     df_csv = pd.concat(frames, ignore_index=True)
     df_csv = _normalize_columns(df_csv)
-
-
 
     df_csv = _apply_date_filters(df_csv, filtro)
     if df_csv.empty:
@@ -406,5 +349,4 @@ def load_climate_data(filtro: dict) -> pd.DataFrame:
     if log_container:
         log_container.info(f"📦 Total final: {len(df_csv)} registros")
 
- 
     return df_csv
