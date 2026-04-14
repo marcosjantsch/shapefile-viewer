@@ -29,4 +29,4 @@ MESES_DISPONIVEIS = {
     "Jul": 7, "Ago": 8, "Set": 9, "Out": 10, "Nov": 11, "Dez": 12
 }
 
-ANOS_DISPONIVEIS = list(range(2000, 2027))
+ANOS_DISPONIVEIS = list(range(2010, 2027))
