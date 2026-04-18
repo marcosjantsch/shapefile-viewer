@@ -1,86 +1,136 @@
-# components/sidebar.py
-from datetime import date
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
 import streamlit as st
-from core.settings import TIPOS_DADO, ANOS_DISPONIVEIS, MESES_DISPONIVEIS
 
-def safe_unique(gdf, col):
-    if col not in gdf.columns:
-        return []
-    return sorted([str(x) for x in gdf[col].dropna().unique()])
+from services.coordinate_service import (
+    DEFAULT_CAPTURE_CITY_NAME,
+    format_dd,
+)
+from tabs.sidebar.entrada import render_sidebar_entrada
+from tabs.sidebar.exportar import render_sidebar_exportar
+from tabs.sidebar.imagens import render_sidebar_imagens
+from tabs.sidebar.processamento_sentinel import render_sidebar_processamento_sentinel
 
-def render_sidebar(gdf_full):
-    st.sidebar.markdown(
-    '<div style="font-size:16px; font-weight:600; margin-bottom:-6px;">Selecione a opção</div>',
-    unsafe_allow_html=True
-    )
-    
- 
 
-    
-    st.sidebar.markdown("---")
-
-    tipo_dado = st.sidebar.selectbox("Tipo de Dados", TIPOS_DADO)
-
-    selected_uf = None
-    selected_empresa = None
-    selected_fazenda = None
-    selected_municipio = None
-
-    if tipo_dado == "Dados por Estado":
-        ufs = safe_unique(gdf_full, "UF")
-        selected_uf = st.sidebar.selectbox("Selecione UF", ufs) if ufs else None
-
-    elif tipo_dado == "Dados por Empresa":
-        empresas = safe_unique(gdf_full, "EMPRESA")
-        selected_empresa = st.sidebar.selectbox("Selecione Empresa", empresas) if empresas else None
-
-    elif tipo_dado == "Dados Empresa/Fazenda":
-        empresas = safe_unique(gdf_full, "EMPRESA")
-        selected_empresa = st.sidebar.selectbox("Selecione Empresa", empresas) if empresas else None
-
-        if selected_empresa and "EMPRESA" in gdf_full.columns and "FAZENDA" in gdf_full.columns:
-            gdf_emp = gdf_full[gdf_full["EMPRESA"].astype(str) == str(selected_empresa)]
-            fazendas = safe_unique(gdf_emp, "FAZENDA")
-            selected_fazenda = st.sidebar.selectbox("Selecione Fazenda", fazendas) if fazendas else None
-
-    elif tipo_dado == "Dados por Município":
-        ufs = safe_unique(gdf_full, "UF")
-        selected_uf = st.sidebar.selectbox("Selecione UF", ufs) if ufs else None
-
-        if selected_uf and "UF" in gdf_full.columns and "MUNICIPIO" in gdf_full.columns:
-            gdf_uf = gdf_full[gdf_full["UF"].astype(str) == str(selected_uf)]
-            municipios = safe_unique(gdf_uf, "MUNICIPIO")
-            selected_municipio = st.sidebar.selectbox("Selecione Município", municipios) if municipios else None
-
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Período mensal")
-
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        start_mes_nome = st.selectbox("Mês inicial", list(MESES_DISPONIVEIS.keys()), index=0)
-    with col2:
-        start_ano = st.selectbox("Ano inicial", ANOS_DISPONIVEIS, index=ANOS_DISPONIVEIS.index(2026))
-
-    col3, col4 = st.sidebar.columns(2)
-    with col3:
-        end_mes_nome = st.selectbox("Mês final", list(MESES_DISPONIVEIS.keys()), index=11)
-    with col4:
-        end_ano = st.selectbox("Ano final", ANOS_DISPONIVEIS, index=ANOS_DISPONIVEIS.index(2026))
-
-    start_date = date(start_ano, MESES_DISPONIVEIS[start_mes_nome], 1)
-    end_date = date(end_ano, MESES_DISPONIVEIS[end_mes_nome], 1)
-
-    apply = st.sidebar.button("✅ Aplicar Filtros")
-    log_container = st.sidebar.container() if apply else st.sidebar.empty()
-
-    return {
-        "tipo_dado": tipo_dado,
-        "selected_uf": selected_uf,
-        "selected_empresa": selected_empresa,
-        "selected_fazenda": selected_fazenda,
-        "selected_municipio": selected_municipio,
-        "start_date": start_date,
-        "end_date": end_date,
-        "apply": apply,
-        "log_container": log_container,
+def _render_mode_summary():
+    modo_entrada = st.session_state.get("sb_modo_entrada") or st.session_state.get("modo_entrada") or "-"
+    mode_styles = {
+        "Empresa / Fazenda": {
+            "bg": "rgba(22, 163, 74, 0.14)",
+            "border": "rgba(22, 163, 74, 0.28)",
+            "text": "#166534",
+        },
+        "Coordenada": {
+            "bg": "rgba(37, 99, 235, 0.14)",
+            "border": "rgba(37, 99, 235, 0.28)",
+            "text": "#1d4ed8",
+        },
+        "Arquivo KML/KMZ": {
+            "bg": "rgba(217, 119, 6, 0.14)",
+            "border": "rgba(217, 119, 6, 0.28)",
+            "text": "#b45309",
+        },
     }
+    style = mode_styles.get(
+        modo_entrada,
+        {"bg": "rgba(120,120,120,0.10)", "border": "rgba(120,120,120,0.18)", "text": "#4b5563"},
+    )
+
+    st.markdown(
+        f"""
+        <div style="
+            margin: 3px 0 4px 0;
+            padding: 7px 10px;
+            border-radius: 12px;
+            border: 1px solid rgba(120,120,120,0.18);
+            background: rgba(255,255,255,0.03);
+        ">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <div style="font-size:11px; font-weight:700; opacity:0.75; text-transform:uppercase;">
+                    Modo Ativo
+                </div>
+                <div style="
+                    padding: 3px 9px;
+                    border-radius: 999px;
+                    font-size: 11px;
+                    font-weight: 700;
+                    background: {style["bg"]};
+                    border: 1px solid {style["border"]};
+                    color: {style["text"]};
+                ">
+                    {modo_entrada}
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_capture_summary():
+    captured = st.session_state.get("captured_coordinate")
+
+    st.markdown("### Coordenada atual")
+    st.caption(
+        "O ponto inicia em Jaguariaiva, Parana. Voce pode editar no campo de coordenada ou mover o marcador no mapa segurando CTRL."
+    )
+
+    if captured:
+        source = captured.get("source")
+        if source == "default_city_center":
+            st.info(f"Ponto inicial carregado em {DEFAULT_CAPTURE_CITY_NAME}.")
+        else:
+            st.success("Ponto atualmente definido no mapa.")
+
+        st.markdown(f"**DD:** {format_dd(captured.get('latitude'))}, {format_dd(captured.get('longitude'))}")
+        st.markdown(
+            f"**DMS:** {captured.get('latitude_dms', '-')} | {captured.get('longitude_dms', '-')}"
+        )
+    else:
+        st.info("Nenhum ponto disponivel.")
+
+
+def render_sidebar(gdf_full, available_images=None):
+    if available_images is None:
+        available_images = []
+
+    with st.sidebar:
+        st.markdown(
+            '<div style="font-size:15px; font-weight:600; margin-bottom:-8px;">Selecione as opcoes</div>',
+            unsafe_allow_html=True,
+        )
+        _render_mode_summary()
+
+        tab_entrada, tab_imagens, tab_exportar, tab_proc_sentinel = st.tabs(
+            ["Entrada", "Imagens", "Exportar", "Processamento Sentinel"]
+        )
+
+        with tab_entrada:
+            st.session_state.get("_sidebar_mode_nonce", 0)
+            entrada_data = render_sidebar_entrada(gdf_full)
+            if entrada_data.get("modo_entrada") == "Coordenada":
+                st.markdown("---")
+                _render_capture_summary()
+
+        with tab_imagens:
+            imagens_data = render_sidebar_imagens(available_images)
+
+        with tab_exportar:
+            export_data = render_sidebar_exportar(available_images)
+
+        with tab_proc_sentinel:
+            proc_data = render_sidebar_processamento_sentinel()
+
+    result = {}
+    result.update(entrada_data)
+    result.update(imagens_data)
+    result.update(export_data)
+    result.update(proc_data)
+
+    result.setdefault("tipo_dado", "Dados Empresa/Fazenda")
+    result.setdefault("selected_uf", None)
+    result.setdefault("selected_municipio", None)
+    result.setdefault("log_container", None)
+
+    return result

@@ -4,13 +4,16 @@ import streamlit_authenticator as stauth
 import yaml
 from yaml.loader import SafeLoader
 
+
 def load_config():
     try:
         with open("config.yaml", "r", encoding="utf-8") as f:
             return yaml.load(f, Loader=SafeLoader)
     except FileNotFoundError:
-        st.error("config.yaml não encontrado. Copie config.yaml.example -> config.yaml e edite.")
+        st.error("config.yaml não encontrado.")
         st.stop()
+
+
 
 def setup_authentication():
     config = load_config()
@@ -22,7 +25,6 @@ def setup_authentication():
         config["cookie"]["expiry_days"],
     )
 
-    # Em versões novas, login pode retornar None e apenas preencher session_state
     authenticator.login(location="sidebar")
 
     name = st.session_state.get("name")
@@ -30,6 +32,8 @@ def setup_authentication():
     username = st.session_state.get("username")
 
     return authenticator, name, authentication_status, username
+
+
 
 def get_user_role():
     config = load_config()

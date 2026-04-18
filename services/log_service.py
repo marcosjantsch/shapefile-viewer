@@ -1,16 +1,21 @@
-# services/log_service.py
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+import os
 import pandas as pd
 import streamlit as st
 
 
-
 LOG_SESSION_KEY = "event_log_records"
+LOG_FILE = "logs_auth.csv"
 
+
+# =========================================================
+# BASE
+# =========================================================
 
 def _ensure_log_store() -> List[Dict[str, Any]]:
     if LOG_SESSION_KEY not in st.session_state:
@@ -22,53 +27,98 @@ def clear_logs() -> None:
     st.session_state[LOG_SESSION_KEY] = []
 
 
-def add_log(level, source, message, details=None):
-    if "event_log_records" not in st.session_state:
-        st.session_state["event_log_records"] = []
-    st.session_state["event_log_records"].append({
+# =========================================================
+# PERSISTÊNCIA
+# =========================================================
+
+def _persist_log(record: Dict[str, Any]) -> None:
+    try:
+        df = pd.DataFrame([record])
+
+        if os.path.exists(LOG_FILE):
+            df.to_csv(LOG_FILE, mode="a", header=False, index=False)
+        else:
+            df.to_csv(LOG_FILE, index=False)
+
+    except Exception as e:
+        # não quebra o app se falhar
+        print(f"[LOG ERROR] Falha ao salvar log: {e}")
+
+
+# =========================================================
+# LOG PRINCIPAL
+# =========================================================
+
+def add_log(level: str, source: str, message: str, details=None):
+    record = {
+        "timestamp": datetime.utcnow().isoformat(),
         "level": level,
         "source": source,
         "message": message,
-        "details": details or {}
-    })
+    }
 
-def log_info(source, message, details=None):
+    if isinstance(details, dict):
+        record.update(details)
+    elif details is not None:
+        record["details"] = str(details)
+
+    # salva na sessão
+    _ensure_log_store().append(record)
+
+    # salva em arquivo
+    _persist_log(record)
+
+
+# =========================================================
+# WRAPPERS
+# =========================================================
+
+def log_info(source: str, message: str, details=None):
     add_log("INFO", source, message, details)
 
+
+def log_warning(source: str, message: str, details=None):
+    add_log("WARNING", source, message, details)
+
+
+def log_error(source: str, message: str, details=None):
+    add_log("ERROR", source, message, details)
+
+
+def log_success(source: str, message: str, details=None):
+    add_log("SUCCESS", source, message, details)
+
+
+# =========================================================
+# LOG ESPECÍFICO DE LOGIN
+# =========================================================
+
+def log_auth_login(user: str, role: str, status: str, username: str = ""):
+    add_log(
+        level="INFO" if status == "SUCCESS" else "ERROR",
+        source="auth_login_log",
+        message="Login realizado" if status == "SUCCESS" else "Falha no login",
+        details={
+            "user": user,
+            "username": username,
+            "role": role,
+            "status": status,
+        },
+    )
+
+
+# =========================================================
+# CONSULTA
+# =========================================================
 
 def get_logs() -> List[Dict[str, Any]]:
     return list(_ensure_log_store())
 
 
 def logs_to_dataframe() -> pd.DataFrame:
-    rows = []
-    for item in _ensure_log_store():
-        base = {
-            "timestamp": item.get("timestamp"),
-            "level": item.get("level"),
-            "source": item.get("source"),
-            "message": item.get("message"),
-        }
-        details = item.get("details", {}) or {}
-        if not isinstance(details, dict):
-            details = {"details": str(details)}
-
-        row = {**base, **details}
-        rows.append(row)
+    rows = _ensure_log_store()
 
     if not rows:
         return pd.DataFrame(columns=["timestamp", "level", "source", "message"])
 
     return pd.DataFrame(rows)
-
-
-def log_warning(source: str, message: str, details: Optional[Dict[str, Any]] = None) -> None:
-    add_log("WARNING", source, message, details)
-
-
-def log_error(source: str, message: str, details: Optional[Dict[str, Any]] = None) -> None:
-    add_log("ERROR", source, message, details)
-
-
-def log_success(source: str, message: str, details: Optional[Dict[str, Any]] = None) -> None:
-    add_log("SUCCESS", source, message, details)
