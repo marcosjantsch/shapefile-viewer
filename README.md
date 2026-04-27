@@ -52,6 +52,19 @@ streamlit run app.py
 
 3. Acesse a URL exibida pelo Streamlit no navegador.
 
+## Deploy com Cloud Build / Cloud Run
+
+O repositorio possui um `Dockerfile` na raiz para builds Docker padrao do Google Cloud Build.
+
+Exemplo:
+
+```bash
+gcloud builds submit --tag gcr.io/SEU_PROJETO/seg365
+gcloud run deploy seg365 --image gcr.io/SEU_PROJETO/seg365 --platform managed --allow-unauthenticated
+```
+
+O container usa a porta definida pela variavel `PORT` do Cloud Run, com fallback para `8080`.
+
 ## Armazenamento
 
 Por padrao, o app sobe em modo `local_json`, com seed automatico em `data/app_data.json`.
