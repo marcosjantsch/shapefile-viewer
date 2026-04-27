@@ -1,0 +1,63 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="ocean" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(256 214) rotate(90) scale(214)">
+      <stop offset="0" stop-color="#4F99CA"/>
+      <stop offset="0.58" stop-color="#1A5E8D"/>
+      <stop offset="1" stop-color="#0E3554"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="53" y1="55" x2="177" y2="477" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B8863B"/>
+      <stop offset="0.52" stop-color="#6C4319"/>
+      <stop offset="1" stop-color="#D8B06B"/>
+    </linearGradient>
+    <linearGradient id="green" x1="100" y1="338" x2="457" y2="369" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#456C0D"/>
+      <stop offset="0.45" stop-color="#88C322"/>
+      <stop offset="1" stop-color="#D4F06B"/>
+    </linearGradient>
+    <linearGradient id="textGreen" x1="246" y1="196" x2="389" y2="207" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5B8F12"/>
+      <stop offset="0.5" stop-color="#97D432"/>
+      <stop offset="1" stop-color="#D8F17B"/>
+    </linearGradient>
+    <filter id="shadow" x="34" y="22" width="443" height="463" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#18324D" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <path d="M89 65C55 113 37 178 37 248C37 325 60 394 100 443" stroke="url(#ring)" stroke-width="20" stroke-linecap="round"/>
+    <circle cx="99" cy="51" r="13" fill="#B98943"/>
+    <circle cx="107" cy="463" r="14" fill="#8A5A27"/>
+    <ellipse cx="247" cy="479" rx="132" ry="20" fill="#5E3E1D" opacity="0.16"/>
+    <ellipse cx="247" cy="470" rx="116" ry="18" fill="#8C6537"/>
+    <ellipse cx="247" cy="470" rx="90" ry="11" fill="#2D2116"/>
+
+    <circle cx="256" cy="227" r="198" fill="url(#ocean)"/>
+    <path d="M151 119C174 90 221 88 250 99C205 116 179 140 160 177C145 171 140 146 151 119Z" fill="#8F9B57"/>
+    <path d="M285 78C322 70 365 83 389 112C365 111 344 129 320 127C305 111 286 101 285 78Z" fill="#B2A85D"/>
+    <path d="M162 267C178 238 219 225 249 237C229 270 221 306 222 351C192 335 166 307 162 267Z" fill="#776A33"/>
+    <path d="M318 172C356 157 390 172 418 199C388 214 372 243 368 280C337 271 311 236 307 202C305 190 309 177 318 172Z" fill="#D0C07B"/>
+    <path d="M112 188H400" stroke="#D9F2FF" stroke-opacity="0.52" stroke-width="2"/>
+    <path d="M97 246H415" stroke="#D9F2FF" stroke-opacity="0.52" stroke-width="2"/>
+    <path d="M108 304H404" stroke="#D9F2FF" stroke-opacity="0.52" stroke-width="2"/>
+    <path d="M165 56C148 112 144 303 167 408" stroke="#D9F2FF" stroke-opacity="0.52" stroke-width="2"/>
+    <path d="M256 31V425" stroke="#D9F2FF" stroke-opacity="0.58" stroke-width="2"/>
+    <path d="M347 56C362 118 366 320 347 406" stroke="#D9F2FF" stroke-opacity="0.52" stroke-width="2"/>
+
+    <path d="M100 342C183 322 326 325 439 354L391 413C302 391 194 389 121 405L100 342Z" fill="url(#green)"/>
+    <path d="M438 354L474 369L419 407L391 413L438 354Z" fill="#7BB41C"/>
+
+    <rect x="144" y="175" width="224" height="88" rx="26" fill="#113655" fill-opacity="0.38"/>
+    <text x="147" y="236" font-family="Manrope, Arial, sans-serif" font-size="70" font-weight="900" fill="#F7F7F4">SEG</text>
+    <text x="284" y="236" font-family="Manrope, Arial, sans-serif" font-size="70" font-weight="900" fill="url(#textGreen)">365</text>
+
+    <rect x="152" y="270" width="74" height="8" rx="4" fill="#F6F8FA"/>
+    <path d="M248 244L261 271H235L248 244Z" fill="#94CF2A"/>
+    <rect x="270" y="270" width="86" height="8" rx="4" fill="#F6F8FA"/>
+
+    <text x="157" y="320" font-family="Manrope, Arial, sans-serif" font-size="30" font-weight="800" fill="#F5F6F6">SEGURANCA</text>
+    <text x="157" y="356" font-family="Manrope, Arial, sans-serif" font-size="30" font-weight="800" fill="#F5F6F6">DO TRABALHO</text>
+    <text x="196" y="394" font-family="Manrope, Arial, sans-serif" font-size="26" font-weight="900" fill="#B7D84F">365 DIAS</text>
+  </g>
+</svg>
