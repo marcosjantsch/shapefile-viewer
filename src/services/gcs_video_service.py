@@ -63,16 +63,20 @@ def resolve_gcs_video_url(value: str, expires_minutes: int = 360) -> str:
 
     client = _get_storage_client()
     blob = client.bucket(bucket_name).blob(blob_name)
+    public_url = blob.public_url
     try:
-        if blob.exists() and blob.public_url:
-            return blob.public_url
+        if blob.exists() and public_url:
+            return public_url
     except Exception:
         pass
-    return blob.generate_signed_url(
-        expiration=timedelta(minutes=expires_minutes),
-        method="GET",
-        version="v4",
-    )
+    try:
+        return blob.generate_signed_url(
+            expiration=timedelta(minutes=expires_minutes),
+            method="GET",
+            version="v4",
+        )
+    except Exception:
+        return public_url
 
 
 def scan_gcs_video_files(companies: list[dict] | None = None, bucket_name: str = "") -> list[dict]:

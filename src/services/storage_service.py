@@ -463,18 +463,16 @@ class FirestoreStorageProvider(AbstractStorageProvider):
         import firebase_admin
         from firebase_admin import credentials, firestore
 
-        if not FIREBASE_CREDENTIALS_PATH:
-            raise RuntimeError("SEG_FIREBASE_CREDENTIALS_PATH nao configurado.")
-
         if not firebase_admin._apps:
-            credential = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
-            firebase_admin.initialize_app(
-                credential,
-                {
-                    "projectId": GOOGLE_PROJECT_ID or None,
-                    "storageBucket": GOOGLE_STORAGE_BUCKET or None,
-                },
-            )
+            options = {
+                "projectId": GOOGLE_PROJECT_ID or None,
+                "storageBucket": GOOGLE_STORAGE_BUCKET or None,
+            }
+            if FIREBASE_CREDENTIALS_PATH:
+                credential = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
+                firebase_admin.initialize_app(credential, options)
+            else:
+                firebase_admin.initialize_app(options=options)
         self.db = firestore.client()
 
     def read(self) -> dict:

@@ -65,6 +65,20 @@ gcloud run deploy seg365 --image gcr.io/SEU_PROJETO/seg365 --platform managed --
 
 O container usa a porta definida pela variavel `PORT` do Cloud Run, com fallback para `8080`.
 
+Variaveis recomendadas no Cloud Run:
+
+- `SEG_VIDEO_LIBRARY_SOURCE=gcs` para usar apenas o bucket em producao
+- `SEG_GOOGLE_VIDEO_BUCKET=segurancastorege`
+- `SEG_GOOGLE_PROJECT_ID=seu-projeto`
+- `SEG_APP_STORAGE_MODE=firestore` se quiser persistencia real dos cadastros
+
+Permissoes da service account do Cloud Run:
+
+- leitura no bucket `segurancastorege`
+- acesso ao Firestore, caso `SEG_APP_STORAGE_MODE=firestore`
+
+Sem Firestore, o modo `local_json` funciona no container, mas os dados gravados ficam efemeros e podem ser perdidos quando a instancia/revisao for reiniciada.
+
 ## Armazenamento
 
 Por padrao, o app sobe em modo `local_json`, com seed automatico em `data/app_data.json`.
